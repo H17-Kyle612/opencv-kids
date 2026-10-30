@@ -12,6 +12,7 @@ from cake_game import CakeRace
 from game_visuals import GameVisuals
 from graphics import text
 from diagnostics import draw_guides, write_preview
+from audio import SoundEffects
 
 ROOT = Path(__file__).resolve().parent
 MODEL = ROOT / 'models' / 'face_detection_yunet_2023mar.onnx'
@@ -32,6 +33,7 @@ def main():
     parser.add_argument('--detect-width', type=int, default=960, help='顔検出の最大幅（既定: 960、0で入力を縮小しない）')
     parser.add_argument('--threshold', type=float, default=.75, help='顔検出のしきい値（既定: 0.75）')
     parser.add_argument('--fullscreen', action='store_true')
+    parser.add_argument('--no-sound', action='store_true', help='効果音を再生しない')
     parser.add_argument('--mirror-only', action='store_true', help='ゲームを自動開始しない')
     parser.add_argument('--min-face', type=int, default=160, help='ゲーム開始に必要な顔幅（既定: 160px）')
     parser.add_argument('--time-limit', type=float, default=30., help='制限時間（秒、既定: 30）')
@@ -57,6 +59,7 @@ def main():
     estimator = MouthEstimator(lbf)
     race = CakeRace(min_face=args.min_face, time_limit=args.time_limit)
     visuals = GameVisuals()
+    sounds = SoundEffects(enabled=not args.no_sound)
     game_enabled = not args.mirror_only
     last_game_state = None
     cap = cv2.VideoCapture(args.camera)
@@ -94,6 +97,7 @@ def main():
                 if race.state != last_game_state or race.events:
                     print(f'GAME {race.state} | bites={[p.hits for p in race.players]} | time={race.elapsed:.2f}', flush=True)
                     last_game_state = race.state
+            sounds.update(race, now, active=game_enabled)
             snow.draw(frame, dt, now)
             render(frame, visible, sprites, now, head_offset)
             visuals.draw(frame, race, visible, ratios, now, game_enabled)
@@ -142,5 +146,6 @@ def main():
                 break
     finally:
         cap.release()
+        sounds.close()
         cv2.destroyAllWindows()
 

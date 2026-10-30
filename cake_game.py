@@ -6,7 +6,7 @@ from statistics import median
 
 
 class MouthCycle:
-    """閉→開→閉を1口とし、開けっぱなし・検出途切れ・瞬間ノイズを数えない。"""
+    """閉→開→閉を1口とする。継続時間・加点間隔の制限は設けない。"""
     def __init__(self, baseline=.025):
         self.baseline = baseline
         self.reset()
@@ -14,37 +14,21 @@ class MouthCycle:
     def reset(self):
         self.armed = False
         self.opened = False
-        self.open_since = None
-        self.since = None
-        self.last_bite = -math.inf
 
-    def update(self, ratio, now):
+    def update(self, ratio):
         if ratio is None or not math.isfinite(ratio):
             self.reset()
             return False
         close = max(.065, self.baseline + .035)
         opening = max(.11, self.baseline + .07)
         if ratio <= close:
-            self.open_since = None
-            if self.since is None:
-                self.since = now
-            if now - self.since >= .06:
-                if self.opened and now - self.last_bite >= .24:
-                    self.opened = False
-                    self.armed = True
-                    self.last_bite = now
-                    return True
-                self.armed = True
-        elif ratio >= opening:
-            if self.open_since is None:
-                self.open_since = now
-            if self.armed and now - self.open_since >= .06:
-                self.opened = True
-                self.armed = False
-            self.since = None
-        else:
-            self.since = None
-            self.open_since = None
+            bite = self.opened
+            self.opened = False
+            self.armed = True
+            return bite
+        if ratio >= opening and self.armed:
+            self.opened = True
+            self.armed = False
         return False
 
 
@@ -168,7 +152,7 @@ class CakeRace:
                 self.reason = '時間終了！'
                 return
             for i, player in enumerate(self.players):
-                if player.mouth.update(ratios[player.track_id], now):
+                if player.mouth.update(ratios[player.track_id]):
                     player.hits += 1
                     player.last_bite = now
                     self.events.append(i)

@@ -12,32 +12,31 @@ class MouthTests(unittest.TestCase):
     def test_one_open_close_cycle_counts_once(self):
         mouth = MouthCycle(.025)
         sequence = [(0., .02), (.08, .02), (.16, .3), (.24, .3), (.32, .02), (.40, .02), (.50, .02), (.60, .02)]
-        self.assertEqual(sum(mouth.update(ratio, now) for now, ratio in sequence), 1)
+        self.assertEqual(sum(mouth.update(ratio) for now, ratio in sequence), 1)
 
     def test_small_mouth_opening_counts_a_complete_cycle(self):
         mouth = MouthCycle(.025)
         sequence = [(0., .02), (.08, .02), (.16, .12), (.24, .12), (.32, .02), (.40, .02)]
-        self.assertEqual(sum(mouth.update(ratio, now) for now, ratio in sequence), 1)
+        self.assertEqual(sum(mouth.update(ratio) for now, ratio in sequence), 1)
 
     def test_closed_mouth_noise_does_not_count(self):
         mouth = MouthCycle(.025)
         sequence = [(0., .02), (.08, .02), (.16, .08), (.24, .08), (.32, .02), (.40, .02)]
-        self.assertEqual(sum(mouth.update(ratio, now) for now, ratio in sequence), 0)
+        self.assertEqual(sum(mouth.update(ratio) for now, ratio in sequence), 0)
 
     def test_holding_open_does_not_count(self):
         mouth = MouthCycle()
         for i in range(100):
-            self.assertFalse(mouth.update(.4, i*.05))
+            self.assertFalse(mouth.update(.4))
 
-    def test_one_frame_noise_does_not_count(self):
+    def test_each_detected_cycle_counts_without_time_or_interval_limits(self):
         mouth = MouthCycle()
-        sequence = [(0., .02), (.1, .02), (.2, .4), (.23, .02), (.4, .02)]
-        self.assertEqual(sum(mouth.update(ratio, now) for now, ratio in sequence), 0)
+        self.assertEqual(sum(mouth.update(ratio) for ratio in (.02, .3, .02, .3, .02)), 2)
 
     def test_lost_landmarks_cancel_partial_bite(self):
         mouth = MouthCycle()
         sequence = [(0., .02), (.1, .02), (.2, .4), (.3, .4), (.4, None), (.5, .02), (.6, .02)]
-        self.assertEqual(sum(mouth.update(ratio, now) for now, ratio in sequence), 0)
+        self.assertEqual(sum(mouth.update(ratio) for now, ratio in sequence), 0)
 
 
 class RaceTests(unittest.TestCase):
@@ -104,7 +103,7 @@ class RaceTests(unittest.TestCase):
 
     def test_mouth_sample_after_deadline_cannot_score(self):
         self.start()
-        for ratio in (.025, .025, .3, .3, .025):
+        for ratio in (.025, .025, .3, .3):
             self.step({1:ratio, 2:.025})
         self.race.time_limit = self.race.elapsed + .05
         self.step({1:.025, 2:.025})
