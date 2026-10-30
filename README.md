@@ -1,7 +1,24 @@
-# みんなのクリスマス変身カメラ
+# みんなのクリスマス変身カメラ & ケーキぱくぱく対戦
 
-OpenCVだけで、カメラに映った複数人の顔を検出し、一人ずつランダムに変身させます。
-カメラ映像は鏡のように左右反転し、大小の雪がゆっくり降ります。
+カメラに映った全員がクリスマスの姿に変身し、2人が十分な大きさで映ると
+口の開閉でケーキを食べる対戦ゲームが始まります。
+映像の取得・顔検出・口の特徴点推定・描画はOpenCVで処理します。
+MediaPipeやdlibは使用していません。
+
+## 起動（セットアップ済みの場合）
+
+プロジェクトのフォルダで実行します。
+
+```sh
+source .venv/bin/activate
+python christmas_camera.py --fullscreen
+```
+
+ゲームを自動開始せず、変身ミラーとして起動する場合：
+
+```sh
+python christmas_camera.py --fullscreen --mirror-only
+```
 
 ## 初回セットアップ（macOS / Homebrew）
 
@@ -13,161 +30,146 @@ cd opencv-kids
 "$(brew --prefix)/bin/python3" -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements-lock.txt
-```
-
-顔検出モデルは同梱しています。
-
-## 実行
-
-```sh
-cd opencv-kids
-source .venv/bin/activate
-python christmas_camera.py
-```
-
-全画面で起動する場合：
-
-```sh
+python setup_models.py
 python christmas_camera.py --fullscreen
 ```
 
-仮想環境を有効にせず、直接起動することもできます。
+開発時の環境は Homebrew Python 3.15.2 / OpenCV 4.14.0 / NumPy 2.5.4 です。
+既存環境から更新する場合、`opencv-python` と `opencv-contrib-python` は共存させません。
 
 ```sh
-.venv/bin/python christmas_camera.py
+source .venv/bin/activate
+python -m pip uninstall -y opencv-python opencv-python-headless opencv-contrib-python-headless
+python -m pip install --force-reinstall -r requirements-lock.txt
+python setup_models.py
 ```
+
+初回は実行元アプリのカメラ権限を許可してください。
+映らない場合は「システム設定 → プライバシーとセキュリティ → カメラ」を確認します。
+
+## ゲームのルール
+
+1. 画面の左と右に1人ずつ入り、カメラを正面から見ます。
+2. 両者の顔幅が160px以上で、口の特徴点を推定できる状態が1.5秒続くと準備完了です。
+3. 準備中は口を閉じます。この間の値を、各プレイヤーの閉じた口の基準にします。
+4. **3・2・1** のカウントダウン後にスタートします。
+5. **閉じる → 開く → 閉じる** の1往復を1口と数えます。開けっぱなしでは増えません。
+6. **4口で1ホール、3ホール（12口）を先に完食した方が勝ち**です。
+
+口を開く・閉じる状態には短い継続時間と別々のしきい値を設け、瞬間的な揺れを抑えています。
+制限時間は90秒。時間切れは口数が多い方の勝ち、同点や同じフレームの完食は引き分けです。
+カウントダウン中は得点になりません。
+
+対戦中に顔や口の特徴点を見失った場合は、**両者の計測と得点を一時停止**します。
+2人が安定して戻ったら3秒のカウントダウン後に再開し、10秒以上戻らない場合は待機へ戻ります。
+プレイヤーは開始時の2人に割り当てます。これは位置による追跡であり、個人を識別する顔照合ではありません。
+顔の交差や長い遮蔽で割り当てが不安定になった場合は、Rキーで再試合してください。
+
+## HUD・結果・演出
+
+- プレイヤー別の色枠、食べたホール数、口数、全体進捗、口の開き具合のメーター
+- 対戦タイム、カウントダウン、一時停止表示
+- 勝敗、完食タイム、食べたホール数・口数、1秒あたりの口数
+- 食べるたびにケーキが弾んで回転し、クリーム・金色の粒・光の輪と大きな文字が出現
+- ホール完食時の強い粒子演出、勝利時の花火と紙吹雪
+
+HUDはOpenCV標準フォントで描くため、画面内の案内は英語です。
 
 ## 操作
 
-起動したカメラウィンドウを選んで操作してください。
+カメラウィンドウを選択して操作してください。
 
 | キー | 操作 |
 |---|---|
-| Space / R | 全員の変身をシャッフル |
-| S | 雪と変身を含む写真を `outputs/` に保存（操作説明は写りません） |
-| F | 全画面表示の切り替え |
-| H | 操作説明の表示切り替え |
-| 1〜6 | 全員を同じ素材にして位置確認（サンタ・トナカイ・星・箱・十字架・リース） |
-| ↑ / ↓ | 頭の飾りを上下に微調整 |
-| D | 顔の枠と特徴点を表示 |
+| G | ゲーム / 変身ミラーを切り替え |
+| R | 再試合・ゲームをリセットし、変身をシャッフル |
+| Space | 全員の変身をシャッフル |
+| S | 雪・変身・ゲームHUDを含む写真を `outputs/` に保存 |
+| F | 全画面切り替え |
+| H | 変身ミラーの操作説明を表示・非表示 |
+| 1〜6 | 全員の素材を指定（サンタ・トナカイ・星・箱・十字架・リース） |
+| ↑ / ↓ | 頭の飾りの上下位置を微調整 |
+| D | 顔の枠と5つの特徴点のガイド |
 | Q / Esc | 終了 |
 
-通常起動では自動保存・動画録画・外部送信は行いません。実行時のインターネット接続は不要です。
-写真は日時を含む異なる名前で保存します。
+## 変身素材
 
-## ランダム変身のルール
+サンタ帽・ひげ・トナカイのツノ・赤鼻・星・プレゼント箱・十字架・リースの
+**8点を画像生成した透過PNG**で用意しています。ニンジン鼻は削除しました。
+頭・鼻・顔周りを個別に抽選し、検出した全員に適用します。
+星は明るい本体、強い金色の後光、放射状の光芒、8か所のきらめきが動きます。
 
-- 頭：サンタ帽、トナカイのツノ、光る星、プレゼント箱、金色の十字架、なし
-- 鼻：赤鼻、ニンジン鼻、なし
-- 顔周り：サンタのひげ、クリスマスリース、なし
-- 各部位を独立して抽選します。同じ部位には一つだけ付け、全て「なし」にはしません。
-- リースは顔を囲み、プレゼント箱は頭に載り、星は明るい本体を保ち、柔らかな後光と周囲のきらめきが動きます。
-- 頭の素材は両目、鼻は鼻先、ひげは口、リースは顔の中央を基準に配置し、首の傾きに追従します。頭上の余白が狭い場合は頭の飾りを自動で縮小します。
-- 検出された全ての顔に適用します。素材はOpenCVの図形描画で作成しています。
-- 初登場時に抽選し、位置による追跡中は同じ変身を保ちます。
-- 最後に検出してから1.2秒以内なら近くで再検出した顔に変身を引き継ぎます。見失った位置には描画しません。
-- 個人を特定する顔照合は行いません。顔が交差したり隠れたりすると変身が入れ替わる場合があります。
+帽子などは両目、鼻は鼻先、ひげは口、リースは顔の中央を基準に配置します。
+頭上の余白が少ない場合は頭の飾りを縮小します。頭の上に余白のある画角が適しています。
 
-## 位置の調整と確認画像
+画像は `assets/generated/` に格納し、生成に使ったプロンプトは `assets/prompts/` に保存しています。
+素材の制作に組み込みの `image_gen` を使用しました。実行時の画像生成やAPI接続は不要です。
+ケーキは丸ごと・3/4・1/2・1/4・空の皿の5段階を、それぞれ画像生成しています。
 
-頭の素材は起動中に↑↓キーで上下に動かせます。画面下の `Head offset` に値が表示されます。
-再起動後も同じ位置にする場合は、表示された値を起動引数に指定します。
+## 調整用の起動オプション
 
 ```sh
-python christmas_camera.py --fullscreen --head-offset -0.05
-```
-
-正の値で下、負の値で上に動きます。単位は各顔の幅に対する比率です。
-`1`〜`6`で素材を指定して全員の位置を確認し、Spaceでランダム変身に戻れます。
-
-投影と同じ描画結果をローカルで確認するための任意オプション：
-
-```sh
-python christmas_camera.py --fullscreen --preview-file outputs/live_preview.jpg
-```
-
-指定した画像1枚を0.5秒ごとに上書きします。操作説明や位置ガイドも含みます。
-このオプションを指定した場合のみ定期保存します。保存先はGitの公開対象外の `outputs/` を推奨します。
-
-開発時に画面を操作せず素材を確認する場合は `--control-file outputs/live_controls.json` も指定できます。
-JSON例は `{"look": 3, "head_offset": 0.0}`。`look` は0でランダム、1〜6で操作表の各素材です。
-ファイルが更新されたときだけ設定を適用し、カメラを開き直さずに調整できます。
-確認画像や設定ファイルはローカル用です。
-
-## カメラ・人数に合わせた調整
-
-```sh
-# 別のカメラを使う
+# 別のカメラ
 python christmas_camera.py --camera 1
 
-# 検出を軽くする（小さく映る顔は検出しにくくなります）
+# ゲーム開始の顔幅を変更（入力画像上のpx）
+python christmas_camera.py --min-face 180
+
+# 競うホール数と制限時間
+python christmas_camera.py --cakes 2 --time-limit 60
+
+# 検出を軽くする。小さい顔は検出しにくくなります
 python christmas_camera.py --detect-width 640
 
-# 遠くの小さな顔にも処理画素数を確保する（処理負荷は増えます）
-python christmas_camera.py --detect-width 1280
+# 頭の飾りを上へ移動（顔幅に対する比率。正で下、負で上）
+python christmas_camera.py --head-offset -0.05
 
-# 検出しきい値を下げる（誤検出も増える可能性があります）
-python christmas_camera.py --threshold 0.65
+# 口の特徴点と開き具合を確認
+python christmas_camera.py --mouth-debug
 ```
 
-既定では1280×720のカメラ入力を要求し、幅960以下に縮小して毎フレーム検出します。
-実際の入力解像度はカメラが対応する設定になります。
-人数によるアプリ側の表示上限は設けていませんが、同時人数・検出精度・速度は実際の画角、
-顔の画素数、照明、遮蔽、PC性能に左右されます。現場で確認してください。
-帽子やツノを置く余白のため、頭の上までゆとりを持って映してください。
+カメラには1280×720を要求し、顔検出は既定で幅960以下、口元の推定は幅720以下で処理します。
+入力解像度はカメラの対応設定に依存します。
+検出した全顔に変身を描き、ゲームの口元推定は対戦候補・対戦者の最大2人に限定します。
+精度や速度は照明、顔の向き、距離、遮蔽、PC性能に左右されます。
 
-初回はmacOSからカメラ権限を求められる場合があります。
-映らない場合は「システム設定 → プライバシーとセキュリティ → カメラ」で
-実行元アプリ（TerminalやCodexなど）の許可を確認してください。
-
-## カメラなしで確認
+## 確認画像・テスト
 
 ```sh
 python christmas_camera.py --demo
+python preview_game.py
 python -m unittest discover -s tests -v
 ```
 
-`--demo` は架空の顔6人と素材の組み合わせを組み合わせた画像を `outputs/` に保存します。
-テストでは複数顔の追跡、短時間の見失い、素材の画面端処理、雪の描画を確認します。
-実際のカメラでの精度・速度を保証するテストではありません。
+`--demo` は変身素材の組み合わせ画像、`preview_game.py` は架空の顔を使ったゲーム画面と
+6秒の演出動画を `outputs/` に作成します。
+テストは口の開閉の数え方、ノイズ・見失い、2人の開始条件、カウントダウン、勝敗、
+引き分け、一時停止、追跡、画面端の描画を検証します。
 
-## 環境
-
-セットアップに使用したPython：Homebrew Python 3.15.2。
-依存関係は `requirements-lock.txt` に記録しています。
-このプログラムは `opencv-python` と `numpy` を使用します。MediaPipeやdlibは不要です。
-
-環境を作り直す場合：
+開発時に投影と同じ描画結果をローカルで確認する任意オプション：
 
 ```sh
-brew update
-brew install python
-brew upgrade python
-cd opencv-kids
-"$(brew --prefix)/bin/python3" -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements-lock.txt
+python christmas_camera.py --preview-file outputs/live_preview.jpg --mouth-debug
 ```
 
-既存の `.venv` を異なるPythonで作り直す場合は、必要なファイルがないことを確認し、
-`.venv` のみを削除してから作成してください。
-将来Pythonのメジャー・マイナーバージョンが変わった場合は、依存パッケージの対応確認が必要です。
+0.5秒ごとに確認画像1枚と状態のJSONを上書きします。
+通常起動では自動保存・録画・外部送信はしません。写真はSキーを押したときだけ保存します。
+`--control-file outputs/live_controls.json` を併用すると、JSONの
+`{"look": 3, "head_offset": 0.0}` などを更新して、カメラを開き直さず素材・位置を確認できます。
+`look` は0でランダム、1〜6で操作表の各素材です。
+`outputs/` はGitの公開対象から除外しています。
 
-## 顔検出モデルとライセンス
+## 顔検出・口元推定のモデル
 
-OpenCV 4.x対応のYuNet `face_detection_yunet_2023mar.onnx` を同梱しています。
+- **YuNet**：OpenCV 4.x対応 `face_detection_yunet_2023mar.onnx` を同梱。
+  [配布元](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet)、
+  MITライセンスは `models/LICENSE-YuNet.txt`。
+  SHA-256：`8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4`
+- **Facemark LBF**：OpenCV公式チュートリアルで案内されている68点モデルを
+  `python setup_models.py` で取得。約54MBのためGitには含めません。
+  [上流の配布元](https://github.com/kurnianggoro/GSOC2017/blob/252614093b29280c549351971d44d71e63c9197c/data/lbfmodel.yaml)、
+  [OpenCVの使い方](https://docs.opencv.org/3.4.12/d7/dec/tutorial_facemark_usage.html)。
+  取得後にSHA-256 `70dd8b1657c42d1595d6bd13d97d932877b3bed54a95d3c4733a0f740d1fd66b` を照合します。
 
-- 配布元：https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet
-- モデル取得元：https://media.githubusercontent.com/media/opencv/opencv_zoo/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
-- SHA-256：`8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4`
-- ライセンス：`models/LICENSE-YuNet.txt`（MIT）
-
-## フォルダ
-
-- `christmas_camera.py`：クリスマス変身カメラ
-- `models/`：顔検出モデルとライセンス
-- `tests/`：追跡・描画のテスト
-- `assets/`：追加素材の保存場所
-- `outputs/`：写真、プレビュー、最初の教材の出力
-- `lessons/01_draw_face.py`：最初に準備した図形描画の教材
-- `.venv/`：専用Python環境
+LBFの内側の唇3組の平均距離を口幅で割り、閉じた状態からの変化を判定しています。
+実行時はモデル・素材をローカルから読み込むため、インターネット接続は不要です。

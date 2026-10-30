@@ -1,0 +1,38 @@
+{
+  "tool": "built-in image_gen",
+  "transparent_background": true,
+  "prompts": [
+    [
+      "santa",
+      "A single Santa Claus hat overlay asset for a children's Christmas augmented reality camera game. A charming high quality polished soft 3D illustration with felt red fabric, fluffy cream white fur brim and pompom, broad curved brim viewed directly from front, hat tips flops to the viewer right. Isolated hat only, absolutely no head face mannequin body or other object. Entire hat visible, centered with generous transparent margin. Warm studio light, soft rounded forms, rich festive red, attractive realistic material detail, no hard black outlines, no text, no watermark. True transparent background."
+    ],
+    [
+      "beard",
+      "A single Santa Claus beard face-overlay asset for a children's Christmas camera game. Charming premium soft 3D illustration, fluffy white gently curly beard with two soft cheek tufts and a U shaped transparent opening along the top center to keep the wearer's lips unobstructed. Front view symmetric silhouette with softly rounded tapering bottom, no face, no skin, no mouth, no nose, no moustache spanning the lips, no head, no mannequin, no hat. Isolated beard only on true transparent background, generous margins, warm soft studio light, detailed fluffy cream white fibers, no black outlines, no text or watermark."
+    ],
+    [
+      "antlers",
+      "A matched pair of reindeer antlers for a children's Christmas augmented reality face filter, one isolated paired overlay object. Premium soft 3D illustration, friendly softly rounded velvety warm brown antlers, left and right branches balanced and symmetric, connected by a thin curved red headband at the bottom, tiny festive bells at antler roots. Front view, no reindeer face or human head, no ears, no nose, no body, no background. Entire paired antlers visible and generous transparent margins. Warm studio light, tactile soft toy materials, clean polished silhouette, no text, no watermark, true transparent background."
+    ],
+    [
+      "star",
+      "A single beautifully bright five pointed Christmas tree topper star, isolated transparent overlay for a children's camera game. Premium soft 3D illustration in glossy luminous gold with ivory white brilliant center highlights and beveled rounded edges, symmetric upright star front view. A compact warm golden glow close to the star, but no separate scattered sparkles, no stand, no tree, no face, no text or watermark. Whole star visible with generous transparent margins. True transparent background, warm magical soft studio lighting. The central star must be clean readable and very bright."
+    ],
+    [
+      "gift",
+      "One beautifully wrapped Christmas present box viewed straight from the front with a slightly visible top, an isolated head-top overlay asset for a children's Christmas camera game. Premium soft 3D illustration, rich festive red wrapping, forest green ribbon and elegant large satin gold bow, softly rounded edges and tactile paper fabric detail. No other objects, no face, no head, no hands, no floor, no shadow backdrop. Entire box and bow visible with generous transparent margins. Warm soft studio lighting, cohesive charming polished toy aesthetic, true transparent background, no text, no watermark."
+    ],
+    [
+      "cross",
+      "One upright golden Latin cross ornament for a children's Christmas camera game face overlay. Clearly recognizable traditional Christian cross silhouette with vertical stem longer below the horizontal arm than above. Premium soft 3D illustration, warm polished gold with softly beveled rounded edges and bright cream highlights, a delicate restrained warm glow, no figure of a person, no crucified figure, no jewels, no chain, no stand, no additional objects. Direct front view, entire cross centered with generous true transparent margins. No text or watermark."
+    ],
+    [
+      "red",
+      "A single round shiny red Rudolph reindeer nose as an isolated transparent face overlay asset. Premium soft 3D toy illustration, friendly velvety rich cherry-red round ball, bright soft white highlight in upper left, subtly soft material, nearly circular front-view silhouette, no face, no eyes, no antlers, no head, no strap, no body. Whole nose centered with generous true transparent margins, warm soft studio light. No text or watermark."
+    ],
+    [
+      "wreath",
+      "One circular Christmas wreath face frame overlay with a completely transparent large empty central opening. Premium soft 3D illustration, plush richly detailed forest green fir foliage, red holly berries, tiny warm golden ornaments and a satin red ribbon bow at bottom. Direct front view perfectly circular balanced wreath, thin enough ring so the large open central hole takes about 70 percent of the outer diameter; no object or face in center, no background, no door, no text or watermark. Entire wreath visible including bow with generous transparent margins, warm soft studio light, matching charming children's Christmas toy aesthetic."
+    ]
+  ]
+}

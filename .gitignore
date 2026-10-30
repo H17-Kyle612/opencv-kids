@@ -9,3 +9,7 @@ outputs/*
 .env.*
 !.env.example
 *.log
+
+# Download with setup_models.py; upstream model provenance in README
+models/lbfmodel.yaml
+models/*.download

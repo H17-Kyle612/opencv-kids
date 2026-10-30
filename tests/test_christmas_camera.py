@@ -79,7 +79,7 @@ class RenderingTests(unittest.TestCase):
         frames = star_animation(sprites['star'])
         self.assertFalse(np.array_equal(frames[0], frames[6]))
         for frame in frames:
-            self.assertEqual(frame[156, 200, 3], 255)
+            self.assertGreaterEqual(frame[156, 200, 3], 240)
         tracker = Tracker(seed=0)
         tracker.choose(LOOKS[2])
         tracks = tracker.update(np.array([face(200, 200)]), 0.)

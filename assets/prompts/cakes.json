@@ -1,0 +1,26 @@
+{
+  "tool": "built-in image_gen",
+  "transparent_background": true,
+  "prompts": [
+    [
+      "cake_0",
+      "Use case: stylized-concept. Asset type: single sprite for a children's Christmas cake eating videogame. A charming premium soft 3D illustrated round strawberry Christmas shortcake on a simple round white porcelain plate, viewed from a FIXED elevated front three quarter angle (camera elevation 30 degrees). Golden sponge layers, white whipped cream frosting, red strawberry halves, small green holly garnish. Cake is a single low wide cylinder, no writing no candles no characters no hands no cutlery. Plate horizontal ellipse, centered, whole plate visible. Soft warm studio light, clean readable glossy delicious icing, toy-like appealing rounded materials. True transparent background with generous margins. No text no watermark. The whole intact round cake, not a single bite missing."
+    ],
+    [
+      "cake_1",
+      "Use case: stylized-concept. Asset type: single sprite for a children's Christmas cake eating videogame. A charming premium soft 3D illustrated round strawberry Christmas shortcake on a simple round white porcelain plate, viewed from a FIXED elevated front three quarter angle (camera elevation 30 degrees). Golden sponge layers, white whipped cream frosting, red strawberry halves, small green holly garnish. Cake is a single low wide cylinder, no writing no candles no characters no hands no cutlery. Plate horizontal ellipse, centered, whole plate visible. Soft warm studio light, clean readable glossy delicious icing, toy-like appealing rounded materials. True transparent background with generous margins. No text no watermark. Exactly THREE QUARTERS of the cake remain: the front-right quarter wedge has been completely eaten away and is absent. Remaining cake exposes neat layered sponge and cream cut faces. The white plate remains intact underneath, tiny crumbs in the empty front-right sector."
+    ],
+    [
+      "cake_2",
+      "Use case: stylized-concept. Asset type: single sprite for a children's Christmas cake eating videogame. A charming premium soft 3D illustrated round strawberry Christmas shortcake on a simple round white porcelain plate, viewed from a FIXED elevated front three quarter angle (camera elevation 30 degrees). Golden sponge layers, white whipped cream frosting, red strawberry halves, small green holly garnish. Cake is a single low wide cylinder, no writing no candles no characters no hands no cutlery. Plate horizontal ellipse, centered, whole plate visible. Soft warm studio light, clean readable glossy delicious icing, toy-like appealing rounded materials. True transparent background with generous margins. No text no watermark. Exactly HALF of the cake remains: only the left semicircle of cake is still on the plate. The entire right half has been eaten away and is absent. Show layered sponge cream cut face, a few crumbs on the empty right half of the intact plate."
+    ],
+    [
+      "cake_3",
+      "Use case: stylized-concept. Asset type: single sprite for a children's Christmas cake eating videogame. A charming premium soft 3D illustrated round strawberry Christmas shortcake on a simple round white porcelain plate, viewed from a FIXED elevated front three quarter angle (camera elevation 30 degrees). Golden sponge layers, white whipped cream frosting, red strawberry halves, small green holly garnish. Cake is a single low wide cylinder, no writing no candles no characters no hands no cutlery. Plate horizontal ellipse, centered, whole plate visible. Soft warm studio light, clean readable glossy delicious icing, toy-like appealing rounded materials. True transparent background with generous margins. No text no watermark. Only ONE QUARTER wedge of the cake remains at the back-left of the white plate. Three quarters have been eaten and are absent. Small triangular remaining piece with exposed golden sponge and cream layers and one strawberry, tiny crumbs on the rest of the intact plate."
+    ],
+    [
+      "cake_4",
+      "Use case: stylized-concept. Asset type: single sprite for a children's Christmas cake eating videogame. A charming premium soft 3D illustrated round strawberry Christmas shortcake on a simple round white porcelain plate, viewed from a FIXED elevated front three quarter angle (camera elevation 30 degrees). Golden sponge layers, white whipped cream frosting, red strawberry halves, small green holly garnish. Cake is a single low wide cylinder, no writing no candles no characters no hands no cutlery. Plate horizontal ellipse, centered, whole plate visible. Soft warm studio light, clean readable glossy delicious icing, toy-like appealing rounded materials. True transparent background with generous margins. No text no watermark. The cake has been entirely eaten. Show ONLY the same empty white porcelain plate with a few tiny golden sponge crumbs, a small smear of cream and one tiny red strawberry crumb. NO remaining cake or slice."
+    ]
+  ]
+}
