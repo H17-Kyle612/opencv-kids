@@ -1,4 +1,4 @@
-"""2人対戦の状態管理と口の開閉判定。映像・描画から独立して検証可能。"""
+"""1人チャレンジ・2人対戦の状態管理と口の開閉判定。映像・描画から独立して検証可能。"""
 from dataclasses import dataclass, field
 import math
 
@@ -44,11 +44,17 @@ class Player:
 class CakeRace:
     bites_per_cake = 4
 
-    def __init__(self, min_face=160, time_limit=30.):
+    def __init__(self, min_face=160, time_limit=30., player_count=2):
         if min_face < 40 or not math.isfinite(time_limit) or time_limit <= 0:
             raise ValueError('min_face>=40、time_limit>0 が必要です')
         self.min_face = min_face
         self.time_limit = time_limit
+        self.set_player_count(player_count)
+
+    def set_player_count(self, player_count):
+        if player_count not in (1, 2):
+            raise ValueError('player_countは1または2です')
+        self.player_count = player_count
         self.reset()
 
     def reset(self):
@@ -68,6 +74,8 @@ class CakeRace:
         valid = [t for t in tracks if t.face[2] >= self.min_face and
                  t.face[3] >= self.min_face * .9 and
                  (ratios is None or ratios.get(t.number) is not None)]
+        if self.player_count == 1:
+            return [max(valid, key=lambda t: t.face[2])] if valid else []
         left = [t for t in valid if t.face[0] + t.face[2] / 2 < width * .48]
         right = [t for t in valid if t.face[0] + t.face[2] / 2 > width * .52]
         if not left or not right:
@@ -90,12 +98,12 @@ class CakeRace:
         if self.state in ('waiting', 'ready'):
             pair = self.candidates(tracks, width, ratios)
             ids = [t.number for t in pair]
-            if len(pair) != 2:
+            if len(pair) != self.player_count:
                 self.state = 'waiting'
                 self.ready_since = None
                 self.players = []
                 return
-            # 顔の大きさ・場所・口の推定が安定してから、同じ2人で開始。
+            # 顔の大きさ・場所・口の推定が安定してから、同じ参加者で開始。
             if [p.track_id for p in self.players] != ids:
                 self.players = [Player(i) for i in ids]
                 self.ready_since = now
@@ -147,7 +155,7 @@ class CakeRace:
             self.elapsed = min(self.time_limit, self.elapsed + dt)
             if self.elapsed >= self.time_limit:
                 best = max(p.hits for p in self.players)
-                self.winners = [i for i, p in enumerate(self.players) if p.hits == best]
+                self.winners = [i for i, p in enumerate(self.players) if p.hits == best] if self.player_count == 2 else []
                 self.state = 'result'
                 self.reason = '時間終了！'
                 return
