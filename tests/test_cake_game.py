@@ -142,5 +142,66 @@ class RaceTests(unittest.TestCase):
         self.assertEqual(self.race.reason, '時間終了！')
 
 
+class SoloTests(unittest.TestCase):
+    def setUp(self):
+        self.race = CakeRace(player_count=1)
+        self.tracks = [track(1, 545)]
+        self.now = 0.
+
+    def step(self, ratio=.025, tracks=None, duration=.1):
+        self.now += duration
+        self.race.update(self.tracks if tracks is None else tracks,
+                         {1: ratio}, 1280, self.now)
+
+    def start(self):
+        for _ in range(60):
+            self.step()
+        self.assertEqual(self.race.state, 'playing')
+
+    def test_center_face_starts_and_largest_face_is_selected(self):
+        faces = [track(2, 10, 170), track(1, 545, 210)]
+        self.assertEqual(self.race.candidates(faces, 1280)[0].number, 1)
+        self.start()
+        self.assertEqual([p.track_id for p in self.race.players], [1])
+
+    def test_scores_unlimited_cakes_and_finishes_without_winner(self):
+        self.start()
+        for _ in range(12):
+            for ratio in (.025, .3, .025):
+                self.step(ratio)
+        self.assertEqual(self.race.players[0].hits, 12)
+        self.assertEqual(self.race.state, 'playing')
+        self.step(duration=30.)
+        self.assertEqual(self.race.state, 'result')
+        self.assertEqual(self.race.elapsed, 30.)
+        self.assertEqual(self.race.winners, [])
+        self.step(.3)
+        self.assertEqual(self.race.players[0].hits, 12)
+
+    def test_spectator_cannot_take_over_and_absence_freezes_timer(self):
+        self.start()
+        elapsed = self.race.elapsed
+        self.step(tracks=[track(2, 545)])
+        self.assertEqual(self.race.state, 'paused')
+        self.assertEqual(self.race.elapsed, elapsed)
+        self.assertEqual(self.race.players[0].track_id, 1)
+        for _ in range(42):
+            self.step()
+        self.assertEqual(self.race.state, 'playing')
+
+    def test_switching_modes_resets_game_and_restores_two_face_requirement(self):
+        self.start()
+        self.race.set_player_count(2)
+        self.step()
+        self.assertEqual(self.race.state, 'waiting')
+        self.assertEqual(self.race.players, [])
+        self.assertEqual(self.race.elapsed, 0.)
+        self.race.set_player_count(1)
+        self.step()
+        self.assertEqual(self.race.state, 'ready')
+        with self.assertRaises(ValueError):
+            self.race.set_player_count(3)
+
+
 if __name__ == '__main__':
     unittest.main()

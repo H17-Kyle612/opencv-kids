@@ -35,6 +35,7 @@ def main():
     parser.add_argument('--fullscreen', action='store_true')
     parser.add_argument('--no-sound', action='store_true', help='効果音を再生しない')
     parser.add_argument('--commentary', action='store_true', help='Codex App ServerによるAI音声実況を有効にする')
+    parser.add_argument('--players', type=int, choices=(1, 2), default=2, help='1: 1人チャレンジ、2: 2人対戦（既定）')
     parser.add_argument('--mirror-only', action='store_true', help='ゲームを自動開始しない')
     parser.add_argument('--min-face', type=int, default=160, help='ゲーム開始に必要な顔幅（既定: 160px）')
     parser.add_argument('--time-limit', type=float, default=30., help='制限時間（秒、既定: 30）')
@@ -58,7 +59,7 @@ def main():
     if not lbf.is_file():
         raise RuntimeError('口検出モデルがありません。python setup_models.py を実行してください。')
     estimator = MouthEstimator(lbf)
-    race = CakeRace(min_face=args.min_face, time_limit=args.time_limit)
+    race = CakeRace(min_face=args.min_face, time_limit=args.time_limit, player_count=args.players)
     visuals = GameVisuals()
     sounds = SoundEffects(enabled=not args.no_sound)
     commentator = None
@@ -82,7 +83,7 @@ def main():
             cv2.setWindowProperty(WINDOW, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         last = time.monotonic()
         fps = 0.
-        print('G: ゲーム切替 | R: 再試合 | SPACE: シャッフル | 1-6: 素材確認 | ↑↓: 頭の飾り位置 | D: 位置ガイド | S: 保存 | F: 全画面 | H: 説明 | Q/ESC: 終了', flush=True)
+        print('M: 1人／2人切替 | G: ゲーム切替 | R: 再試合 | SPACE: シャッフル | 1-6: 素材確認 | ↑↓: 頭の飾り位置 | D: 位置ガイド | S: 保存 | F: 全画面 | H: 説明 | Q/ESC: 終了', flush=True)
         while True:
             ok, frame = cap.read()
             if not ok or frame is None:
@@ -135,6 +136,9 @@ def main():
             elif key in (ord('g'), ord('G')):
                 game_enabled = not game_enabled
                 race.reset()
+            elif key in (ord('m'), ord('M')):
+                race.set_player_count(2 if race.player_count == 1 else 1)
+                game_enabled = True
             elif ord('1') <= key <= ord('6'):
                 tracker.choose(LOOKS[key - ord('1')])
             elif key in (0xF700, 2490368, 65362):

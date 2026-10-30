@@ -262,3 +262,16 @@ GPT-Liveの音声クロックを維持します。開始・終了などの状態
 App Serverの音声機能は実験的で、CLIの更新により変わる可能性があります。
 公式資料：[Codex App Server](https://learn.chatgpt.com/docs/app-server)、
 [GPT-Live 1](https://developers.openai.com/api/docs/models/gpt-live-1)。
+## 1人チャレンジ
+
+1人で30秒間に食べたケーキの数・口数・毎秒の口数を記録するモードです。
+個数上限はなく、終了時は勝敗の代わりに自分の結果を表示します。
+
+```sh
+.venv/bin/python christmas_camera.py --fullscreen --players 1
+```
+
+顔幅160px以上の1人を画面のどこでも検出して開始します。複数の顔が映った場合は
+一番大きい顔を選び、開始後はその人を追跡します。途中で顔が消えると一時停止します。
+Mキーで1人／2人を切り替えます（進行中の得点と時間はリセット）。Rキーで同じモードを再挑戦します。
+既定の起動は2人対戦です。

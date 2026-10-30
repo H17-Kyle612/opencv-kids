@@ -42,7 +42,9 @@ class GameVisuals:
             return
         h, w = frame.shape[:2]
         unit = min(w/1280, h/720)
-        centers = [(w*.25, h*.78), (w*.75, h*.78)]
+        solo = race.player_count == 1
+        centers = [(w*.5, h*.78)] if solo else [(w*.25, h*.78), (w*.75, h*.78)]
+        mode = '1人チャレンジ' if solo else '2人対戦'
         for index in race.events:
             self.burst(centers[index], COLORS[index], now,
                        race.players[index].hits % race.bites_per_cake == 0)
@@ -57,17 +59,17 @@ class GameVisuals:
         by_id = {t.number: t for t in tracks}
         if race.state == 'waiting':
             panel(frame, (0, 0, w, 105*unit))
-            text(frame, 'クリスマス ケーキぱくぱく！', (w/2, 30*unit), .85*unit, GOLD)
-            text(frame, '左右に1人ずつ、顔を大きく映してね',
+            text(frame, f'ケーキぱくぱく！　{mode}', (w/2, 30*unit), .85*unit, GOLD)
+            text(frame, '顔を大きく映してね' if solo else '左右に1人ずつ、顔を大きく映してね',
                  (w/2, 69*unit), .52*unit)
-            for i in range(2):
+            for i in range(race.player_count):
                 center = (centers[i][0], h*.63)
                 blit(frame, self.cakes[0], center, w*.17, h*.22)
-                text(frame, f'プレイヤー{i+1}', (center[0], h*.83), .65*unit, COLORS[i])
-            text(frame, f'顔の幅 {race.min_face}px以上で開始　G：変身ミラー', (w/2, h*.94), .48*unit)
+                text(frame, 'あなた' if solo else f'プレイヤー{i+1}', (center[0], h*.83), .65*unit, COLORS[i])
+            text(frame, f'顔の幅 {race.min_face}px以上で開始　M：1人／2人　G：変身ミラー', (w/2, h*.94), .48*unit)
             return
         panel(frame, (0, 0, w, 72*unit))
-        text(frame, 'クリスマス ケーキぱくぱく！', (w*.25, 31*unit), .7*unit, GOLD)
+        text(frame, f'ケーキぱくぱく！　{mode}', (w*.25, 31*unit), .58*unit, GOLD)
         text(frame, f'残り {max(0., race.time_limit-race.elapsed):04.1f}秒', (w*.76, 31*unit), .7*unit)
         # 競技者を顔の色枠で示す。割り当ては開始時に固定する。
         for i, player in enumerate(race.players):
@@ -75,9 +77,10 @@ class GameVisuals:
             if track:
                 x, y, fw, fh = track.face[:4].astype(int)
                 cv2.rectangle(frame, (x, y), (x+fw, y+fh), COLORS[i], max(1, int(2*unit)), cv2.LINE_AA)
-                text(frame, f'プレイヤー{i+1}', (x+fw/2, max(87*unit, y-13*unit)), .65*unit, COLORS[i])
+                text(frame, 'あなた' if solo else f'プレイヤー{i+1}', (x+fw/2, max(87*unit, y-13*unit)), .65*unit, COLORS[i])
         panel(frame, (0, h*.61, w, h), opacity=.83)
-        cv2.line(frame, (w//2, int(h*.64)), (w//2, h-12), (100, 94, 90), 1)
+        if not solo:
+            cv2.line(frame, (w//2, int(h*.64)), (w//2, h-12), (100, 94, 90), 1)
         for i, player in enumerate(race.players):
             x, y = centers[i]
             hits = player.hits
@@ -90,7 +93,7 @@ class GameVisuals:
             if 0 <= age < .18 and hits and stage == 0:
                 sprite = self.cakes[4]
             blit(frame, sprite, (x, y-8*unit), w*.19*scale, h*.24*scale, angle)
-            text(frame, f'プレイヤー{i+1}　{eaten}個', (x, h*.65), .65*unit, COLORS[i])
+            text(frame, f'{"あなた" if solo else f"プレイヤー{i+1}"}　{eaten}個', (x, h*.65), .65*unit, COLORS[i])
             text(frame, f'合計 {hits}口　次のケーキ {stage}/{race.bites_per_cake}口', (x, h*.928), .62*unit)
             # 4口ずつの進捗が見える大きな丸。
             for dot in range(race.bites_per_cake):
@@ -115,21 +118,21 @@ class GameVisuals:
                 text(frame, '口を開いて、閉じると1口！', (w/2, h*.51), .6*unit)
             else:
                 text(frame, '一時停止　顔を正面に向けてね', (w/2, h*.36), .9*unit, GOLD)
-                text(frame, '2人が戻ると再開。時間と得点はそのまま！', (w/2, h*.47), .53*unit)
+                text(frame, '顔が戻ると再開。時間と得点はそのまま！' if solo else '2人が戻ると再開。時間と得点はそのまま！', (w/2, h*.47), .53*unit)
         if race.state == 'playing' and race.elapsed < .7:
             text(frame, 'スタート！', (w/2, h*.35), 2.5*unit, GOLD, 5)
         if race.state == 'result':
             panel(frame, (w*.09, h*.14, w*.91, h*.60), (48, 27, 32), .96)
-            winner = '引き分け！' if len(race.winners) == 2 else f'プレイヤー{race.winners[0]+1}の勝ち！'
+            winner = 'チャレンジ終了！' if solo else ('引き分け！' if len(race.winners) == 2 else f'プレイヤー{race.winners[0]+1}の勝ち！')
             text(frame, winner, (w/2, h*.22), 1.25*unit, GOLD, 3)
             text(frame, race.reason, (w/2, h*.295), .52*unit)
             for i, p in enumerate(race.players):
-                x = w*(.30 if i == 0 else .70)
-                text(frame, f'プレイヤー{i+1}　{p.hits//race.bites_per_cake}個＋{p.hits%race.bites_per_cake}/{race.bites_per_cake}個', (x, h*.385), .6*unit, COLORS[i])
+                x = w*.5 if solo else w*(.30 if i == 0 else .70)
+                text(frame, f'{"あなた" if solo else f"プレイヤー{i+1}"}　{p.hits//race.bites_per_cake}個＋{p.hits%race.bites_per_cake}/{race.bites_per_cake}個', (x, h*.385), .6*unit, COLORS[i])
                 text(frame, f'食べた回数 {p.hits}口', (x, h*.45), .75*unit)
                 rate = p.hits/max(race.elapsed, .01)
                 text(frame, f'毎秒 {rate:.2f}口', (x, h*.51), .45*unit)
-            text(frame, 'R：もう一度あそぶ　G：変身ミラー', (w/2, h*.565), .5*unit)
+            text(frame, 'R：もう一度　M：1人／2人　G：変身ミラー', (w/2, h*.565), .5*unit)
         self._particles(frame, now)
 
     def _particles(self, frame, now):
