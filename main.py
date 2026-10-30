@@ -34,6 +34,7 @@ def main():
     parser.add_argument('--threshold', type=float, default=.75, help='顔検出のしきい値（既定: 0.75）')
     parser.add_argument('--fullscreen', action='store_true')
     parser.add_argument('--no-sound', action='store_true', help='効果音を再生しない')
+    parser.add_argument('--commentary', action='store_true', help='Codex App ServerによるAI音声実況を有効にする')
     parser.add_argument('--mirror-only', action='store_true', help='ゲームを自動開始しない')
     parser.add_argument('--min-face', type=int, default=160, help='ゲーム開始に必要な顔幅（既定: 160px）')
     parser.add_argument('--time-limit', type=float, default=30., help='制限時間（秒、既定: 30）')
@@ -60,6 +61,10 @@ def main():
     race = CakeRace(min_face=args.min_face, time_limit=args.time_limit)
     visuals = GameVisuals()
     sounds = SoundEffects(enabled=not args.no_sound)
+    commentator = None
+    if args.commentary:
+        from commentary import Commentator
+        commentator = Commentator()
     game_enabled = not args.mirror_only
     last_game_state = None
     cap = cv2.VideoCapture(args.camera)
@@ -98,9 +103,13 @@ def main():
                     print(f'GAME {race.state} | bites={[p.hits for p in race.players]} | time={race.elapsed:.2f}', flush=True)
                     last_game_state = race.state
             sounds.update(race, now, active=game_enabled)
+            if commentator:
+                commentator.update(race, now, active=game_enabled)
             snow.draw(frame, dt, now)
             render(frame, visible, sprites, now, head_offset)
             visuals.draw(frame, race, visible, ratios, now, game_enabled)
+            if commentator:
+                text(frame, f'AI実況：{commentator.status}', (frame.shape[1]/2, 91), .4)
             display = frame.copy() if guides or args.mouth_debug or (hud and not game_enabled) else frame
             draw_guides(display, visible, estimator.points if args.mouth_debug and game_enabled else {}, ratios, guides)
             if hud and not game_enabled:
@@ -147,5 +156,7 @@ def main():
     finally:
         cap.release()
         sounds.close()
+        if commentator:
+            commentator.close()
         cv2.destroyAllWindows()
 

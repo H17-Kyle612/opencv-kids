@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ケーキぱくぱく AI実況</title>
+<style>
+@font-face{font-family:BIZ;src:url('font.ttf')}body{font-family:BIZ,sans-serif;background:#102d28;color:#fff;max-width:660px;margin:8vh auto;padding:24px;line-height:1.8}h1{font-size:28px;color:#ffe599}button{font:inherit;padding:12px 22px;border:0;border-radius:12px;background:#ffe599;color:#173a31;cursor:pointer;margin:8px 8px 8px 0}button:disabled{opacity:.5}audio{display:block;width:100%;margin:24px 0}#transcript{min-height:4em;color:#fff3cf}small{color:#b9d3c7}#status{font-weight:bold}
+</style>
+<h1>クリスマス・ケーキぱくぱく実況</h1>
+<p>「実況を開始」を押してから、ゲーム画面で遊んでください。このページを開いたままにすると実況が流れます。</p>
+<button id="start">実況を開始</button><button id="stop" disabled>実況を停止</button>
+<p id="status" role="status">接続待ち</p><audio id="audio" controls autoplay></audio>
+<p id="transcript" aria-live="polite"></p>
+<small>Codex App Server → GPT-Live 1。マイクやカメラ映像は送信せず、残り時間と得点だけを実況に使います。</small>
+<script>
+const start=document.querySelector('#start'),stop=document.querySelector('#stop'),status=document.querySelector('#status'),audio=document.querySelector('#audio'),transcript=document.querySelector('#transcript');
+let peer,channel,context,oscillator,completed=false;
+const post=async(path,body={})=>{const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw Error(data.error||'接続に失敗しました');return data;};
+function cleanup(){completed=true;channel?.close();peer?.close();oscillator?.stop();context?.close();peer=channel=context=oscillator=null;audio.srcObject=null;start.disabled=false;stop.disabled=true;}
+start.onclick=async()=>{start.disabled=true;completed=false;transcript.textContent='';status.textContent='音声を接続しています…';try{
+ peer=new RTCPeerConnection();
+ peer.ontrack=event=>{audio.srcObject=new MediaStream([event.track]);audio.play().catch(()=>status.textContent='再生ボタンを押してください');};
+ // Full-duplexモデルを動かすため無音の音声クロックを送る。マイクは取得しない。
+ context=new AudioContext();await context.resume();oscillator=context.createOscillator();const gain=context.createGain();gain.gain.value=0;const dest=context.createMediaStreamDestination();oscillator.connect(gain);gain.connect(dest);oscillator.start();peer.addTrack(dest.stream.getAudioTracks()[0],dest.stream);
+ channel=peer.createDataChannel('oai-events');
+ channel.onmessage=async({data})=>{const event=JSON.parse(data);if(event.type==='session.started'){status.textContent='実況接続済み';stop.disabled=false;await post('ready');}
+ else if(event.type==='output_audio_transcript.delta'){transcript.textContent+=event.delta||'';}
+ else if(event.type==='output_audio_transcript.done'){transcript.textContent=event.transcript||event.text||transcript.textContent;}
+ else if(event.type==='session.closed'||event.type==='error'){status.textContent='実況の接続が終了しました';cleanup();}};
+ channel.onclose=()=>{if(!completed){status.textContent='実況の接続が終了しました';cleanup();}};
+ peer.onconnectionstatechange=()=>{if(peer?.connectionState==='failed'){status.textContent='音声接続に失敗しました。もう一度開始してください';cleanup();}};
+ await peer.setLocalDescription(await peer.createOffer());
+ if(peer.iceGatheringState!=='complete')await new Promise((resolve,reject)=>{const timeout=setTimeout(()=>reject(Error('音声接続の準備が時間切れになりました')),10000);peer.addEventListener('icegatheringstatechange',()=>{if(peer.iceGatheringState==='complete'){clearTimeout(timeout);resolve();}});});
+ const answer=await post('connect',{sdp:peer.localDescription.sdp});await peer.setRemoteDescription({type:'answer',sdp:answer.sdp});
+}catch(error){status.textContent=error.message;cleanup();}};
+stop.onclick=async()=>{cleanup();status.textContent='実況を停止しました';await post('stop');};
+// 文字起こしはApp Serverから受け取ったものを表示する。
+setInterval(async()=>{try{const r=await fetch('state');if(!r.ok)return;const s=await r.json();transcript.textContent=s.transcript;if(s.error){status.textContent=s.error;cleanup();}}catch{}},1000);
+window.addEventListener('pagehide',()=>navigator.sendBeacon('stop',new Blob(['{}'],{type:'application/json'})));
+</script></html>

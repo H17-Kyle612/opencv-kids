@@ -183,7 +183,7 @@ python christmas_camera.py --preview-file outputs/live_preview.jpg --mouth-debug
   取得後にSHA-256 `70dd8b1657c42d1595d6bd13d97d932877b3bed54a95d3c4733a0f740d1fd66b` を照合します。
 
 LBFの内側の唇3組の平均距離を口幅で割り、閉じた状態からの変化を判定しています。
-実行時はモデル・素材をローカルから読み込むため、インターネット接続は不要です。
+通常のゲームはモデル・素材をローカルから読み込み、インターネット接続は不要です。AI実況を有効にする場合は接続が必要です。
 
 ## 実装の分担
 
@@ -224,3 +224,41 @@ CPUの取り合い、モデルの独立したインスタンス、同じフレ�
 
 参考：[YuNet実装](https://github.com/opencv/opencv/blob/4.x/modules/objdetect/src/face_detect.cpp)、
 [モデルの説明](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet)。
+
+
+## AI音声実況（feature/ai-commentary）
+
+Codex App Serverの実験的な`thread/realtime/*`を使い、`gpt-live-1`の声を
+WebRTCで再生します。通常のテキストモデルによる実況生成やmacOSの読み上げは使用しません。
+確認した環境はCodex CLI 0.166.0とChatGPTログインです。
+APIキーログインの場合は開始を拒否します。利用可否・上限はアカウント側の制限に従います。
+
+```sh
+codex login
+.venv/bin/python christmas_camera.py --fullscreen --commentary
+```
+
+開いたブラウザで「実況を開始」を一度押し、ページを開いたままゲーム画面に戻ります。
+終了はゲームのQキー、実況だけ止める場合はブラウザの「実況を停止」です。
+ブラウザが開かない場合はターミナルに表示するlocalhostのURLを開いてください。
+
+送信する情報はゲームの状態・残り時間・両者の口数とケーキ数・確定した勝者です。
+顔画像、顔の特徴点、マイク音声は送信しません。WebRTCには無音の入力トラックを送り、
+GPT-Liveの音声クロックを維持します。開始・終了などの状態変化は即時、試合中は約2.5秒ごとに
+最新の状況を渡します。通信は別スレッドで処理し、未送信の状況は最新1件で置き換えます。
+接続エラー時もゲームは続行します。別モデル・APIキー・読み上げへの自動切り替えは行いません。
+
+カメラなしの確認コマンド（架空の30秒対戦）：
+
+```sh
+.venv/bin/python tools/check_commentary.py
+```
+
+- `codex_client.py`：App ServerのJSON-RPCとGPT-Liveセッション
+- `commentary.py`：ゲーム状況の抽出、非同期送信、localhostの再生ページ
+- `voice_player.html`：WebRTC音声の再生、日本語UI（BIZ UDPGothic）
+- `commentary_prompt.txt`：日本語実況の指示
+
+App Serverの音声機能は実験的で、CLIの更新により変わる可能性があります。
+公式資料：[Codex App Server](https://learn.chatgpt.com/docs/app-server)、
+[GPT-Live 1](https://developers.openai.com/api/docs/models/gpt-live-1)。
