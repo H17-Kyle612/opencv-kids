@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+.DS_Store
+outputs/*
+!outputs/.gitkeep
+
+# Local settings and credentials
+.env
+.env.*
+!.env.example
+*.log
