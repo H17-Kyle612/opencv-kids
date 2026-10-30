@@ -3,6 +3,7 @@ import argparse
 from dataclasses import dataclass
 from datetime import datetime
 import math
+import json
 from pathlib import Path
 import random
 import time
@@ -13,7 +14,10 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent
 MODEL = ROOT / 'models' / 'face_detection_yunet_2023mar.onnx'
 WINDOW = 'Christmas Magic Camera'
-HEADS = ('santa', 'antlers', 'star', 'gift', 'none')
+HEADS = ('santa', 'antlers', 'star', 'gift', 'cross', 'none')
+LOOKS = (('santa', 'none', 'beard'), ('antlers', 'red', 'none'),
+         ('star', 'none', 'none'), ('gift', 'carrot', 'none'),
+         ('cross', 'none', 'none'), ('none', 'none', 'wreath'))
 NOSES = ('red', 'carrot', 'none')
 
 
@@ -49,10 +53,17 @@ class Tracker:
         self.ttl = ttl
         self.tracks = {}
         self.next_id = 1
+        self.fixed_outfit = None
 
     def shuffle(self):
+        self.fixed_outfit = None
         for track in self.tracks.values():
             track.outfit = costume(self.rng)
+
+    def choose(self, outfit):
+        self.fixed_outfit = outfit
+        for track in self.tracks.values():
+            track.outfit = outfit
 
     def update(self, faces, now):
         self.tracks = {k: t for k, t in self.tracks.items() if now - t.seen <= self.ttl}
@@ -82,7 +93,7 @@ class Tracker:
             used_tracks.add(key)
         for index, face in enumerate(faces):
             if index not in used_faces:
-                track = Track(self.next_id, face.copy(), costume(self.rng), now)
+                track = Track(self.next_id, face.copy(), self.fixed_outfit or costume(self.rng), now)
                 self.tracks[track.number] = track
                 self.next_id += 1
                 visible.append(track)
@@ -93,7 +104,7 @@ class Tracker:
 def make_sprites():
     sprites = {}
     white, red, green = (245, 250, 255, 255), (45, 45, 220, 255), (55, 135, 30, 255)
-    for name in ('santa', 'antlers', 'star', 'gift', 'red', 'carrot', 'beard', 'wreath'):
+    for name in ('santa', 'antlers', 'star', 'gift', 'cross', 'red', 'carrot', 'beard', 'wreath'):
         s = np.zeros((600, 400, 4), np.uint8)
         def poly(points, color):
             cv2.fillPoly(s, [np.array(points, np.int32)], color, cv2.LINE_AA)
@@ -119,16 +130,24 @@ def make_sprites():
             points = [(200 + math.sin(i * math.pi / 5) * (55 if i % 2 == 0 else 24),
                        156 - math.cos(i * math.pi / 5) * (55 if i % 2 == 0 else 24)) for i in range(10)]
             poly(points, gold)
-            for x, y in ((120, 145), (275, 120), (264, 207)):
-                line([(x - 8, y), (x + 8, y)], white, 3)
-                line([(x, y - 8), (x, y + 8)], white, 3)
-            line([(200, 210), (200, 234)], gold, 4)
+            # 白い中心と明るい縁は常に残す。周囲の光だけをアニメーション。
+            cv2.polylines(s, [np.array(points, np.int32)], True, (145, 245, 255, 255), 3, cv2.LINE_AA)
+            circle((191, 143), 5, (245, 255, 255, 255))
         elif name == 'gift':
             cv2.rectangle(s, (120, 144), (280, 234), red, -1)
             cv2.rectangle(s, (111, 133), (289, 155), green, -1)
             cv2.rectangle(s, (187, 134), (213, 234), (40, 220, 255, 255), -1)
             for x, angle in ((173, -25), (227, 25)):
                 cv2.ellipse(s, (x, 117), (30, 15), angle, 0, 360, (40, 220, 255, 255), 8, cv2.LINE_AA)
+        elif name == 'cross':
+            # 縦棒の下側を長くした金色のラテン十字。頭上に浮かぶ飾り。
+            cross = [(188, 90), (212, 90), (212, 128), (250, 128),
+                     (250, 152), (212, 152), (212, 218), (188, 218),
+                     (188, 152), (150, 152), (150, 128), (188, 128)]
+            poly(cross, (45, 175, 230, 255))
+            cv2.polylines(s, [np.array(cross, np.int32)], True, (115, 225, 255, 255), 3, cv2.LINE_AA)
+            line([(197, 98), (197, 208)], (210, 250, 255, 255), 3)
+            line([(158, 137), (241, 137)], (210, 250, 255, 255), 3)
         elif name == 'red':
             circle((200, 350), 25, (35, 35, 245, 255))
             circle((192, 342), 7, (200, 210, 255, 255))
@@ -156,14 +175,45 @@ def make_sprites():
     return sprites
 
 
-def composite(frame, sprite, face, opacity=1.):
-    # 素材の基準点 (200,350) を鼻先に合わせ、顔幅と両目の傾きに追従。
-    eyes = sorted((face[4:6], face[6:8]), key=lambda p: p[0])
-    delta = eyes[1] - eyes[0]
-    angle = math.degrees(math.atan2(float(delta[1]), float(delta[0])))
-    scale = max(float(face[2]) / 200, .01)
-    matrix = cv2.getRotationMatrix2D((200, 350), -angle, scale)
-    matrix[:, 2] += face[8:10] - np.array([200, 350])
+def placement(face, name='red', head_offset=0.):
+    """素材ごとに基準点を分け、鼻の動きで帽子やひげがずれるのを抑える。"""
+    eyes = sorted((face[4:6], face[6:8]), key=lambda point: point[0])
+    right = eyes[1] - eyes[0]
+    right = right / max(float(np.linalg.norm(right)), 1.)
+    down = np.array([-right[1], right[0]])
+    eye_center = (eyes[0] + eyes[1]) / 2
+    mouth = (face[10:12] + face[12:14]) / 2
+    width = max(float(face[2]), 1.)
+    angle = math.degrees(math.atan2(float(right[1]), float(right[0])))
+    if name in HEADS:
+        origin = (200, 239)
+        target = eye_center - down * width * (.40 - head_offset)
+    elif name == 'beard':
+        origin = (200, 402)
+        target = mouth + down * width * .09
+    elif name == 'wreath':
+        origin = (200, 351)
+        target = (eye_center + mouth) / 2
+    else:
+        origin = (200, 350)
+        target = face[8:10]
+    matrix = cv2.getRotationMatrix2D(origin, -angle, width / 200)
+    matrix[:, 2] += target - np.array(origin)
+    return matrix
+
+
+def composite(frame, sprite, face, opacity=1., name='red', head_offset=0.):
+    matrix = placement(face, name, head_offset)
+    if name in HEADS:
+        # 頭上が狭いときは取り付け位置を保ったまま飾りだけ小さくする。
+        x, y, w, h = cv2.boundingRect((sprite[:, :, 3] > 12).astype(np.uint8))
+        bounds = np.array([[[x, y], [x+w, y], [x+w, y+h], [x, y+h]]], np.float32)
+        top = float(cv2.transform(bounds, matrix)[0, :, 1].min())
+        anchor = matrix @ np.array([200., 239., 1.])
+        if top < 8 and anchor[1] > 8:
+            factor = min(1., max(.05, (anchor[1] - 8) / max(anchor[1] - top, 1.)))
+            matrix[:, :2] *= factor
+            matrix[:, 2] = anchor - matrix[:, :2] @ np.array([200., 239.])
     corners = cv2.transform(np.array([[[0., 0.], [400., 0.], [400., 600.], [0., 600.]]]), matrix)[0]
     low = np.maximum(np.floor(corners.min(axis=0)).astype(int), (0, 0))
     high = np.minimum(np.ceil(corners.max(axis=0)).astype(int), (frame.shape[1], frame.shape[0]))
@@ -171,10 +221,44 @@ def composite(frame, sprite, face, opacity=1.):
     if w <= 0 or h <= 0:
         return
     matrix[:, 2] -= low
-    patch = cv2.warpAffine(sprite, matrix, (int(w), int(h)), flags=cv2.INTER_LINEAR)
-    alpha = patch[:, :, 3:4].astype(np.float32) * (opacity / 255)
+    # プリマルチプライで補間し、半透明の光や縁に黒いにじみを作らない。
+    source = sprite.astype(np.float32) / 255
+    source[:, :, :3] *= source[:, :, 3:4]
+    patch = cv2.warpAffine(source, matrix, (int(w), int(h)), flags=cv2.INTER_LINEAR)
+    alpha = patch[:, :, 3:4] * opacity
     roi = frame[low[1]:high[1], low[0]:high[0]]
-    roi[:] = (patch[:, :, :3] * alpha + roi * (1 - alpha)).astype(np.uint8)
+    roi[:] = np.clip(patch[:, :, :3] * (255 * opacity) + roi * (1 - alpha), 0, 255).astype(np.uint8)
+
+
+def star_animation(base, count=24):
+    """柔らかい後光、白金の本体、時間差で瞬く小さな光を事前生成。"""
+    yy, xx = np.mgrid[:600, :400]
+    distance = (xx - 200) ** 2 + (yy - 156) ** 2
+    frames = []
+    for index in range(count):
+        phase = index * math.tau / count
+        radius = 45 + 8 * math.sin(phase)
+        glow = np.exp(-distance / (2 * radius ** 2)) * (75 + 20 * math.sin(phase))
+        image = np.zeros_like(base)
+        image[:, :, :3] = (85, 210, 255)
+        image[:, :, 3] = glow.astype(np.uint8)
+        alpha = base[:, :, 3:4].astype(np.float32) / 255
+        old_alpha = image[:, :, 3:4].astype(np.float32) / 255
+        result_alpha = alpha + old_alpha * (1 - alpha)
+        color = (base[:, :, :3] * alpha + image[:, :, :3] * old_alpha * (1 - alpha)) / np.maximum(result_alpha, 1e-6)
+        image[:, :, :3] = np.clip(color, 0, 255).astype(np.uint8)
+        image[:, :, 3] = (result_alpha[:, :, 0] * 255).astype(np.uint8)
+        for i, (x, y) in enumerate(((117, 135), (277, 105), (277, 201), (134, 215))):
+            intensity = max(0., math.sin(phase + i * 1.6)) ** 3
+            if intensity < .03:
+                continue
+            length = 5 + 15 * intensity
+            vertices = np.array([(x, y-length), (x+2, y-2), (x+length*.6, y),
+                                 (x+2, y+2), (x, y+length), (x-2, y+2),
+                                 (x-length*.6, y), (x-2, y-2)], np.int32)
+            cv2.fillPoly(image, [vertices], (245, 255, 255, int(255 * intensity)), cv2.LINE_AA)
+        frames.append(image)
+    return frames
 
 
 class Snow:
@@ -196,20 +280,25 @@ class Snow:
         cv2.addWeighted(layer, .65, frame, .35, 0, dst=frame)
 
 
-def render(frame, tracks, sprites, now):
-    # 小さな顔から描き、近くの顔を手前にする。
+def render(frame, tracks, sprites, now, head_offset=0.):
+    if '_star_frames' not in sprites:
+        sprites['_star_frames'] = star_animation(sprites['star'])
     for track in sorted(tracks, key=lambda t: t.face[2]):
         head, nose, surround = track.outfit
         for name in (surround, head, nose):
-            if name != 'none':
-                opacity = .75 + .25 * math.sin(now * 4) if name == 'star' else 1.
-                composite(frame, sprites[name], track.face, opacity)
+            if name == 'none':
+                continue
+            sprite = sprites[name]
+            if name == 'star':
+                frames = sprites['_star_frames']
+                sprite = frames[int((now + track.number * .31) * 16) % len(frames)]
+            composite(frame, sprite, track.face, name=name, head_offset=head_offset)
 
 
 def demo(sprites):
     frame = np.full((900, 1440, 3), (46, 30, 25), np.uint8)
     outfits = [('santa', 'none', 'beard'), ('antlers', 'red', 'none'), ('gift', 'carrot', 'none'),
-               ('star', 'none', 'wreath'), ('santa', 'carrot', 'wreath'), ('antlers', 'red', 'beard')]
+               ('star', 'none', 'wreath'), ('cross', 'none', 'none'), ('antlers', 'red', 'beard')]
     tracks = []
     for i, outfit in enumerate(outfits):
         x, y = 250 + (i % 3) * 470, 270 + (i // 3) * 420
@@ -241,8 +330,15 @@ def main():
     parser.add_argument('--detect-width', type=int, default=960, help='検出用画像の最大幅（既定: 960）')
     parser.add_argument('--threshold', type=float, default=.75, help='顔検出のしきい値（既定: 0.75）')
     parser.add_argument('--fullscreen', action='store_true')
+    parser.add_argument('--head-offset', type=float, default=0., help='頭の飾りの上下位置（顔幅に対する比率、正で下）')
+    parser.add_argument('--control-file', type=Path, help='任意のローカルJSONから素材・頭の上下位置を変更')
+    parser.add_argument('--preview-file', type=Path, help='確認用の投影画像を0.5秒ごとにローカル保存（任意）')
     parser.add_argument('--demo', action='store_true', help='カメラを使わず素材一覧画像を保存')
     args = parser.parse_args()
+    if not math.isfinite(args.head_offset) or not -.5 <= args.head_offset <= .5:
+        parser.error('--head-offset は -0.5〜0.5 です')
+    if args.preview_file and args.preview_file.suffix.lower() not in ('.jpg', '.jpeg', '.png'):
+        parser.error('--preview-file は .jpg / .jpeg / .png を指定してください')
     if args.detect_width < 160 or not 0 < args.threshold <= 1:
         parser.error('--detect-width は160以上、--threshold は0より大きく1以下です')
     sprites = make_sprites()
@@ -254,7 +350,9 @@ def main():
     detector = cv2.FaceDetectorYN.create(str(MODEL), '', (320, 320), args.threshold, .3, 5000)
     cap = cv2.VideoCapture(args.camera)
     tracker, snow = Tracker(), Snow()
-    fullscreen, hud = args.fullscreen, True
+    fullscreen, hud, guides = args.fullscreen, True, False
+    head_offset, last_preview = args.head_offset, 0.
+    control_stamp, last_control = None, 0.
     try:
         if not cap.isOpened():
             raise RuntimeError('カメラを開けません。macOSのカメラ権限と --camera 番号を確認してください。')
@@ -266,7 +364,7 @@ def main():
             cv2.setWindowProperty(WINDOW, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         last = time.monotonic()
         fps = 0.
-        print('SPACE/R: 全員シャッフル | S: 写真保存 | F: 全画面 | H: 操作表示 | Q/ESC: 終了')
+        print('SPACE/R: シャッフル | 1-6: 素材確認 | ↑↓: 頭の飾り位置 | D: 位置ガイド | S: 保存 | F: 全画面 | H: 説明 | Q/ESC: 終了', flush=True)
         while True:
             ok, frame = cap.read()
             if not ok or frame is None:
@@ -283,22 +381,69 @@ def main():
                 faces = np.empty((0, 15), np.float32)
             else:
                 faces[:, :14] /= scale
+            if args.control_file and now - last_control >= .5:
+                last_control = now
+                try:
+                    stamp = args.control_file.stat().st_mtime_ns
+                    if stamp != control_stamp:
+                        control_stamp = stamp
+                        controls = json.loads(args.control_file.read_text())
+                        look = controls.get('look', 0)
+                        offset = controls.get('head_offset', head_offset)
+                        if type(look) is not int or not 0 <= look <= len(LOOKS):
+                            raise ValueError('look は0〜6の整数です')
+                        if not isinstance(offset, (int, float)) or not math.isfinite(offset) or not -.5 <= offset <= .5:
+                            raise ValueError('head_offset は -0.5〜0.5 です')
+                        if look == 0:
+                            tracker.shuffle()
+                        else:
+                            tracker.choose(LOOKS[look-1])
+                        head_offset = float(offset)
+                        print(f'確認設定: look={look}, head_offset={head_offset:+.3f}', flush=True)
+                except FileNotFoundError:
+                    pass
+                except (OSError, ValueError, AttributeError) as error:
+                    print(f'確認設定を読み込めません: {error}', flush=True)
             visible = tracker.update(faces, now)
             snow.draw(frame, dt, now)
-            render(frame, visible, sprites, now)
+            render(frame, visible, sprites, now, head_offset)
             # 写真には操作説明を含めない。
-            display = frame.copy() if hud else frame
+            display = frame.copy() if hud or guides else frame
+            if guides:
+                for track in visible:
+                    points = track.face[4:14].reshape(5, 2).astype(int)
+                    for x, y in points:
+                        cv2.circle(display, (int(x), int(y)), 3, (70, 255, 150), -1, cv2.LINE_AA)
+                    x, y, w, h = track.face[:4].astype(int)
+                    cv2.rectangle(display, (x, y), (x+w, y+h), (70, 255, 150), 1)
             if hud:
-                cv2.rectangle(display, (0, 0), (display.shape[1], 58), (30, 28, 24), -1)
-                for text, y in ((f'CHRISTMAS MAGIC  |  Faces: {len(visible)}  |  {fps:.0f} FPS', 23),
-                                ('SPACE: Shuffle   S: Photo   F: Fullscreen   H: Hide help   Q/ESC: Quit', 47)):
-                    cv2.putText(display, text, (14, y), cv2.FONT_HERSHEY_SIMPLEX, .55, (235, 245, 255), 1, cv2.LINE_AA)
+                # 頭上の星や帽子を隠さないよう、操作説明は画面下に置く。
+                bottom = display.shape[0]
+                cv2.rectangle(display, (0, bottom-58), (display.shape[1], bottom), (30, 28, 24), -1)
+                for text, y in ((f'CHRISTMAS MAGIC | Faces: {len(visible)} | {fps:.0f} FPS | Head offset: {head_offset:+.2f}', bottom-35),
+                                ('SPACE: Shuffle  1-6: Looks  Up/Down: Fit  D: Guides  S: Photo  F: Fullscreen  H: Help  Q: Quit', bottom-11)):
+                    cv2.putText(display, text, (14, y), cv2.FONT_HERSHEY_SIMPLEX, .5, (235, 245, 255), 1, cv2.LINE_AA)
+            if args.preview_file and now - last_preview >= .5:
+                args.preview_file.parent.mkdir(parents=True, exist_ok=True)
+                temporary = args.preview_file.with_name(args.preview_file.stem + '.tmp' + args.preview_file.suffix)
+                if not cv2.imwrite(str(temporary), display):
+                    raise RuntimeError(f'確認画像を保存できませんでした: {temporary}')
+                temporary.replace(args.preview_file)
+                last_preview = now
             cv2.imshow(WINDOW, display)
-            key = cv2.waitKey(1) & 0xFF
+            key = cv2.waitKeyEx(1)
             if key in (27, ord('q'), ord('Q')):
                 break
             if key in (32, ord('r'), ord('R')):
                 tracker.shuffle()
+            elif ord('1') <= key <= ord('6'):
+                tracker.choose(LOOKS[key - ord('1')])
+            elif key in (0xF700, 2490368, 65362):
+                head_offset = max(-.5, head_offset - .025)
+            elif key in (0xF701, 2621440, 65364):
+                head_offset = min(.5, head_offset + .025)
+            elif key in (ord('d'), ord('D')):
+                guides = not guides
             elif key in (ord('s'), ord('S')):
                 save(frame)
             elif key in (ord('h'), ord('H')):
@@ -317,5 +462,7 @@ def main():
 if __name__ == '__main__':
     try:
         main()
+    except KeyboardInterrupt:
+        pass
     except (RuntimeError, cv2.error) as error:
         raise SystemExit(f'エラー: {error}')
