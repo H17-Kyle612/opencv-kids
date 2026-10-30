@@ -14,6 +14,16 @@ class MouthTests(unittest.TestCase):
         sequence = [(0., .02), (.08, .02), (.16, .3), (.24, .3), (.32, .02), (.40, .02), (.50, .02), (.60, .02)]
         self.assertEqual(sum(mouth.update(ratio, now) for now, ratio in sequence), 1)
 
+    def test_small_mouth_opening_counts_a_complete_cycle(self):
+        mouth = MouthCycle(.025)
+        sequence = [(0., .02), (.08, .02), (.16, .12), (.24, .12), (.32, .02), (.40, .02)]
+        self.assertEqual(sum(mouth.update(ratio, now) for now, ratio in sequence), 1)
+
+    def test_closed_mouth_noise_does_not_count(self):
+        mouth = MouthCycle(.025)
+        sequence = [(0., .02), (.08, .02), (.16, .08), (.24, .08), (.32, .02), (.40, .02)]
+        self.assertEqual(sum(mouth.update(ratio, now) for now, ratio in sequence), 0)
+
     def test_holding_open_does_not_count(self):
         mouth = MouthCycle()
         for i in range(100):
@@ -32,7 +42,7 @@ class MouthTests(unittest.TestCase):
 
 class RaceTests(unittest.TestCase):
     def setUp(self):
-        self.race = CakeRace(cakes=1)
+        self.race = CakeRace()
         self.tracks = [track(1, 180), track(2, 850)]
         self.now = 0.
 
@@ -67,23 +77,39 @@ class RaceTests(unittest.TestCase):
         self.bite(both=True)
         self.assertEqual([p.hits for p in self.race.players], [0, 0])
 
-    def test_winner_after_full_cake_and_frozen_result(self):
+    def test_cake_count_has_no_limit_and_result_waits_for_deadline(self):
         self.start()
-        for _ in range(4):
+        for _ in range(20):
             self.bite()
+        self.assertEqual(self.race.state, 'playing')
+        self.assertEqual(self.race.players[0].hits, 20)
+        self.race.time_limit = self.race.elapsed + .15
+        self.step()
+        self.step()
         self.assertEqual(self.race.state, 'result')
         self.assertEqual(self.race.winners, [0])
-        self.assertEqual(self.race.players[0].hits, 4)
-        self.assertIsNotNone(self.race.players[0].finished)
-        elapsed = self.race.elapsed
+        self.assertEqual(self.race.elapsed, self.race.time_limit)
+        elapsed, hits = self.race.elapsed, self.race.players[0].hits
         self.step(duration=1)
-        self.assertEqual(self.race.elapsed, elapsed)
+        self.assertEqual((self.race.elapsed, self.race.players[0].hits), (elapsed, hits))
 
-    def test_same_frame_finish_is_draw(self):
+    def test_equal_scores_at_deadline_are_draw(self):
         self.start()
         for _ in range(4):
             self.bite(both=True)
+        self.assertEqual(self.race.state, 'playing')
+        self.race.time_limit = self.race.elapsed + .05
+        self.step()
         self.assertEqual(self.race.winners, [0, 1])
+
+    def test_mouth_sample_after_deadline_cannot_score(self):
+        self.start()
+        for ratio in (.025, .025, .3, .3, .025):
+            self.step({1:ratio, 2:.025})
+        self.race.time_limit = self.race.elapsed + .05
+        self.step({1:.025, 2:.025})
+        self.assertEqual(self.race.players[0].hits, 0)
+        self.assertEqual(self.race.state, 'result')
 
     def test_pause_freezes_both_players_and_resumes_after_countdown(self):
         self.start()
@@ -114,7 +140,7 @@ class RaceTests(unittest.TestCase):
         self.step()
         self.assertEqual(self.race.state, 'result')
         self.assertEqual(self.race.winners, [0])
-        self.assertEqual(self.race.reason, 'TIME UP!')
+        self.assertEqual(self.race.reason, '時間終了！')
 
 
 if __name__ == '__main__':

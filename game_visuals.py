@@ -6,62 +6,11 @@ import random
 import cv2
 import numpy as np
 
+from graphics import load_rgba, blit, panel, text
+
 ASSETS = Path(__file__).resolve().parent / 'assets' / 'generated'
 COLORS = ((255, 205, 80), (160, 125, 255))
 GOLD = (100, 225, 255)
-
-
-def load_rgba(path):
-    image = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
-    if image is None or image.ndim != 3 or image.shape[2] != 4:
-        raise RuntimeError(f'透過PNG素材がありません: {path}')
-    if image[:, :, 3].min() == 255:
-        raise RuntimeError(f'素材に透明部分がありません: {path}')
-    x, y, w, h = cv2.boundingRect((image[:, :, 3] > 8).astype(np.uint8))
-    return image[y:y+h, x:x+w]
-
-
-def blit(frame, sprite, center, width, max_height=None, angle=0., opacity=1.):
-    scale = width / sprite.shape[1]
-    if max_height:
-        scale = min(scale, max_height / sprite.shape[0])
-    if scale <= 0:
-        return
-    w, h = max(1, int(sprite.shape[1]*scale)), max(1, int(sprite.shape[0]*scale))
-    source = sprite if sprite.dtype == np.float32 else sprite.astype(np.float32) / 255
-    if sprite.dtype != np.float32:
-        source[:, :, :3] *= source[:, :, 3:4]
-    image = cv2.resize(source, (w, h), interpolation=cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR)
-    if angle:
-        diagonal = int(math.hypot(w, h)) + 2
-        matrix = cv2.getRotationMatrix2D((w/2, h/2), angle, 1.)
-        matrix[:, 2] += [(diagonal-w)/2, (diagonal-h)/2]
-        image = cv2.warpAffine(image, matrix, (diagonal, diagonal))
-        h, w = image.shape[:2]
-    x, y = int(center[0]-w/2), int(center[1]-h/2)
-    left, top = max(0, x), max(0, y)
-    right, bottom = min(frame.shape[1], x+w), min(frame.shape[0], y+h)
-    if right <= left or bottom <= top:
-        return
-    patch = image[top-y:bottom-y, left-x:right-x]
-    target = frame[top:bottom, left:right]
-    alpha = patch[:, :, 3:4] * opacity
-    target[:] = np.clip(patch[:, :, :3]*255*opacity + target*(1-alpha), 0, 255).astype(np.uint8)
-
-
-def text(frame, label, center, size=1., color=(255, 255, 255), thickness=2):
-    font = cv2.FONT_HERSHEY_DUPLEX
-    (w, h), _ = cv2.getTextSize(str(label), font, size, thickness)
-    position = (int(center[0]-w/2), int(center[1]+h/2))
-    cv2.putText(frame, str(label), (position[0]+2, position[1]+3), font, size, (25, 17, 30), thickness+2, cv2.LINE_AA)
-    cv2.putText(frame, str(label), position, font, size, color, thickness, cv2.LINE_AA)
-
-
-def panel(frame, rect, color=(38, 25, 24), opacity=.85):
-    x1, y1, x2, y2 = map(int, rect)
-    roi = frame[max(0, y1):min(frame.shape[0], y2), max(0, x1):min(frame.shape[1], x2)]
-    if roi.size:
-        roi[:] = (roi*(1-opacity)+np.array(color)*opacity).astype(np.uint8)
 
 
 class GameVisuals:
@@ -75,7 +24,6 @@ class GameVisuals:
             self.cakes.append(image)
         self.particles = []
         self.rng = random.Random()
-        self.last = None
         self.result_since = None
         self.last_firework = -math.inf
         self.seen_state = None
@@ -109,80 +57,79 @@ class GameVisuals:
         by_id = {t.number: t for t in tracks}
         if race.state == 'waiting':
             panel(frame, (0, 0, w, 105*unit))
-            text(frame, 'CHRISTMAS CAKE CHOMP!', (w/2, 30*unit), .85*unit, GOLD)
-            text(frame, 'Two players: one on each side. Face the camera and move closer.',
+            text(frame, 'クリスマス ケーキぱくぱく！', (w/2, 30*unit), .85*unit, GOLD)
+            text(frame, '左右に1人ずつ、顔を大きく映してね',
                  (w/2, 69*unit), .52*unit)
             for i in range(2):
                 center = (centers[i][0], h*.63)
                 blit(frame, self.cakes[0], center, w*.17, h*.22)
-                text(frame, f'PLAYER {i+1}', (center[0], h*.83), .65*unit, COLORS[i])
-            text(frame, f'Face width: {race.min_face}px or more | G: mirror only', (w/2, h*.94), .48*unit)
+                text(frame, f'プレイヤー{i+1}', (center[0], h*.83), .65*unit, COLORS[i])
+            text(frame, f'顔の幅 {race.min_face}px以上で開始　G：変身ミラー', (w/2, h*.94), .48*unit)
             return
         panel(frame, (0, 0, w, 72*unit))
-        text(frame, 'CHRISTMAS CAKE CHOMP!', (w*.25, 31*unit), .7*unit, GOLD)
-        text(frame, f'TIME  {race.elapsed:05.1f} / {race.time_limit:.0f}s', (w*.76, 31*unit), .7*unit)
+        text(frame, 'クリスマス ケーキぱくぱく！', (w*.25, 31*unit), .7*unit, GOLD)
+        text(frame, f'残り {max(0., race.time_limit-race.elapsed):04.1f}秒', (w*.76, 31*unit), .7*unit)
         # 競技者を顔の色枠で示す。割り当ては開始時に固定する。
         for i, player in enumerate(race.players):
             track = by_id.get(player.track_id)
             if track:
                 x, y, fw, fh = track.face[:4].astype(int)
                 cv2.rectangle(frame, (x, y), (x+fw, y+fh), COLORS[i], max(1, int(2*unit)), cv2.LINE_AA)
-                text(frame, f'P{i+1}', (x+fw/2, max(87*unit, y-13*unit)), .65*unit, COLORS[i])
+                text(frame, f'プレイヤー{i+1}', (x+fw/2, max(87*unit, y-13*unit)), .65*unit, COLORS[i])
         panel(frame, (0, h*.61, w, h), opacity=.83)
         cv2.line(frame, (w//2, int(h*.64)), (w//2, h-12), (100, 94, 90), 1)
         for i, player in enumerate(race.players):
             x, y = centers[i]
-            hits = min(player.hits, race.total)
+            hits = player.hits
             eaten = hits // race.bites_per_cake
-            stage = hits % race.bites_per_cake if hits < race.total else 4
+            stage = hits % race.bites_per_cake
             age = now-player.last_bite
             scale = 1 + .2*math.exp(-age*8)*math.sin(age*28) if 0 <= age < .6 else 1.
             angle = math.sin(age*35)*9*math.exp(-age*6) if 0 <= age < .6 else 0.
             sprite = self.cakes[stage]
-            if 0 <= age < .18 and hits and hits % 4 == 0:
+            if 0 <= age < .18 and hits and stage == 0:
                 sprite = self.cakes[4]
             blit(frame, sprite, (x, y-8*unit), w*.19*scale, h*.24*scale, angle)
-            text(frame, f'P{i+1}  CAKES {eaten}/{race.cakes}', (x, h*.65), .65*unit, COLORS[i])
-            text(frame, f'{hits} / {race.total} BITES', (x, h*.928), .62*unit)
+            text(frame, f'プレイヤー{i+1}　{eaten}個', (x, h*.65), .65*unit, COLORS[i])
+            text(frame, f'合計 {hits}口　次のケーキ {stage}/{race.bites_per_cake}口', (x, h*.928), .62*unit)
             # 4口ずつの進捗が見える大きな丸。
-            for dot in range(race.total):
-                px = int(x + (dot-(race.total-1)/2)*min(19*unit, w*.4/race.total))
-                cv2.circle(frame, (px, int(h*.98)), max(2, int(5*unit)), COLORS[i] if dot < hits else (90, 80, 80), -1, cv2.LINE_AA)
+            for dot in range(race.bites_per_cake):
+                px = int(x + (dot-(race.bites_per_cake-1)/2)*30*unit)
+                cv2.circle(frame, (px, int(h*.98)), max(2, int(5*unit)), COLORS[i] if dot < stage else (90, 80, 80), -1, cv2.LINE_AA)
             ratio = ratios.get(player.track_id)
             meter = min(1., ratio/.35) if ratio is not None else 0.
             cv2.rectangle(frame, (int(x-w*.13), int(h*.87)), (int(x+w*.13), int(h*.88)), (80, 70, 70), -1)
             cv2.rectangle(frame, (int(x-w*.13), int(h*.87)), (int(x-w*.13+w*.26*meter), int(h*.88)), COLORS[i], -1)
             if 0 <= age < .6:
-                text(frame, 'CHOMP!' if hits % 4 else 'CAKE CLEAR!', (x, h*.56-age*45), (1.1 if hits % 4 else .95)*unit, GOLD, 3)
+                text(frame, 'ぱくっ！' if stage else 'おかわり！', (x, h*.56-age*45), (1.1 if stage else .95)*unit, GOLD, 3)
                 radius = max(1, int(age*400*unit))
                 cv2.circle(frame, (int(x), int(y)), radius, GOLD, max(1, int((1-age/.6)*7*unit)), cv2.LINE_AA)
         if race.state in ('ready', 'countdown', 'paused'):
             panel(frame, (w*.13, h*.25, w*.87, h*.55), (45, 32, 30), .9)
             if race.state == 'ready':
-                text(frame, 'READY? KEEP YOUR MOUTH CLOSED', (w/2, h*.36), .8*unit, GOLD)
+                text(frame, '準備！　口を閉じて待ってね', (w/2, h*.36), .8*unit, GOLD)
                 progress = max(0., min(1., (now-race.ready_since)/1.5))
                 cv2.rectangle(frame, (int(w*.25), int(h*.44)), (int(w*(.25+.5*progress)), int(h*.46)), GOLD, -1)
             elif race.state == 'countdown':
                 text(frame, race.countdown(now), (w/2, h*.38), 2.8*unit, GOLD, 5)
-                text(frame, 'OPEN, THEN CLOSE = ONE BITE', (w/2, h*.51), .6*unit)
+                text(frame, '口を開いて、閉じると1口！', (w/2, h*.51), .6*unit)
             else:
-                text(frame, 'PAUSED - FACE THE CAMERA', (w/2, h*.36), .9*unit, GOLD)
-                text(frame, 'Both players return to resume. Progress and time are kept.', (w/2, h*.47), .53*unit)
+                text(frame, '一時停止　顔を正面に向けてね', (w/2, h*.36), .9*unit, GOLD)
+                text(frame, '2人が戻ると再開。時間と得点はそのまま！', (w/2, h*.47), .53*unit)
         if race.state == 'playing' and race.elapsed < .7:
-            text(frame, 'GO!', (w/2, h*.35), 2.5*unit, GOLD, 5)
+            text(frame, 'スタート！', (w/2, h*.35), 2.5*unit, GOLD, 5)
         if race.state == 'result':
             panel(frame, (w*.09, h*.14, w*.91, h*.60), (48, 27, 32), .96)
-            winner = 'DRAW!' if len(race.winners) == 2 else f'PLAYER {race.winners[0]+1} WINS!'
+            winner = '引き分け！' if len(race.winners) == 2 else f'プレイヤー{race.winners[0]+1}の勝ち！'
             text(frame, winner, (w/2, h*.22), 1.25*unit, GOLD, 3)
             text(frame, race.reason, (w/2, h*.295), .52*unit)
             for i, p in enumerate(race.players):
                 x = w*(.30 if i == 0 else .70)
-                text(frame, f'P{i+1}  {p.hits//4} CAKES / {p.hits} BITES', (x, h*.385), .6*unit, COLORS[i])
-                finish = f'{p.finished:.2f}s' if p.finished is not None else 'NOT FINISHED'
-                text(frame, finish, (x, h*.45), .75*unit)
+                text(frame, f'プレイヤー{i+1}　{p.hits//race.bites_per_cake}個＋{p.hits%race.bites_per_cake}/{race.bites_per_cake}個', (x, h*.385), .6*unit, COLORS[i])
+                text(frame, f'食べた回数 {p.hits}口', (x, h*.45), .75*unit)
                 rate = p.hits/max(race.elapsed, .01)
-                text(frame, f'{rate:.2f} bites/sec', (x, h*.51), .45*unit)
-            text(frame, 'R: PLAY AGAIN    G: BACK TO MIRROR', (w/2, h*.565), .5*unit)
+                text(frame, f'毎秒 {rate:.2f}口', (x, h*.51), .45*unit)
+            text(frame, 'R：もう一度あそぶ　G：変身ミラー', (w/2, h*.565), .5*unit)
         self._particles(frame, now)
 
     def _particles(self, frame, now):

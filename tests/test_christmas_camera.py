@@ -1,6 +1,7 @@
 import unittest
 import numpy as np
-from christmas_camera import Tracker, make_sprites, composite, Snow, placement, star_animation, render, LOOKS
+from tracking import Tracker, LOOKS
+from accessories import make_sprites, composite, Snow, placement, star_animation, render
 
 
 def face(x=100, y=100):

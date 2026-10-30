@@ -3,7 +3,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 from cake_game import CakeRace, Player
-from christmas_camera import Track, make_sprites, render
+from tracking import Track
+from accessories import make_sprites, render
 from game_visuals import GameVisuals
 
 
@@ -33,11 +34,11 @@ def main():
         frame, tracks = background()
         race.state = state
         race.countdown_since = 0.
-        race.elapsed = 12.6
+        race.elapsed = race.time_limit if state == 'result' else (0. if state == 'countdown' else 12.6)
         race.winners = [0]
-        race.reason = 'ALL CAKES FINISHED!'
+        race.reason = '時間終了！'
         if state == 'result':
-            race.players[0].hits, race.players[0].finished = 12, 12.6
+            race.players[0].hits = 19
         render(frame, tracks, sprites, 1.2)
         visuals.draw(frame, race, tracks, {1:.025, 2:.3}, 1.2)
         path = folder / f'game_{state}.png'

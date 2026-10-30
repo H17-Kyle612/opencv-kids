@@ -2,8 +2,7 @@
 from dataclasses import dataclass, field
 import math
 
-import cv2
-import numpy as np
+from statistics import median
 
 
 class MouthCycle:
@@ -24,7 +23,7 @@ class MouthCycle:
             self.reset()
             return False
         close = max(.065, self.baseline + .035)
-        opening = max(.15, self.baseline + .10)
+        opening = max(.11, self.baseline + .07)
         if ratio <= close:
             self.open_since = None
             if self.since is None:
@@ -56,29 +55,23 @@ class Player:
     samples: list = field(default_factory=list)
     mouth: MouthCycle = field(default_factory=MouthCycle)
     last_bite: float = -math.inf
-    finished: float | None = None
 
 
 class CakeRace:
-    def __init__(self, cakes=3, bites_per_cake=4, min_face=160, time_limit=90.):
-        if cakes < 1 or bites_per_cake != 4 or min_face < 40 or time_limit <= 0:
-            raise ValueError('cakes>=1, bites_per_cake=4, min_face>=40, time_limit>0 が必要です')
-        self.cakes = cakes
-        self.bites_per_cake = bites_per_cake
+    bites_per_cake = 4
+
+    def __init__(self, min_face=160, time_limit=30.):
+        if min_face < 40 or not math.isfinite(time_limit) or time_limit <= 0:
+            raise ValueError('min_face>=40、time_limit>0 が必要です')
         self.min_face = min_face
         self.time_limit = time_limit
         self.reset()
-
-    @property
-    def total(self):
-        return self.cakes * self.bites_per_cake
 
     def reset(self):
         self.state = 'waiting'
         self.players = []
         self.ready_since = None
         self.countdown_since = None
-        self.resuming = False
         self.elapsed = 0.
         self.previous = None
         self.absent_since = None
@@ -87,14 +80,21 @@ class CakeRace:
         self.events = []
         self.reason = ''
 
-    def candidates(self, tracks, width, ratios):
+    def candidates(self, tracks, width, ratios=None):
         valid = [t for t in tracks if t.face[2] >= self.min_face and
-                 t.face[3] >= self.min_face * .9 and ratios.get(t.number) is not None]
+                 t.face[3] >= self.min_face * .9 and
+                 (ratios is None or ratios.get(t.number) is not None)]
         left = [t for t in valid if t.face[0] + t.face[2] / 2 < width * .48]
         right = [t for t in valid if t.face[0] + t.face[2] / 2 > width * .52]
         if not left or not right:
             return []
         return [max(left, key=lambda t: t.face[2]), max(right, key=lambda t: t.face[2])]
+
+    def mouth_targets(self, tracks, width):
+        if self.players:
+            wanted = {p.track_id for p in self.players}
+            return [t for t in tracks if t.number in wanted]
+        return self.candidates(tracks, width)
 
     def update(self, tracks, ratios, width, now):
         self.events = []
@@ -122,16 +122,15 @@ class CakeRace:
                 player.samples = player.samples[-90:]
             if now - self.ready_since >= 1.5:
                 # 開いた口を閉じた基準として学習させない。
-                if any(np.median(p.samples) > .14 for p in self.players):
+                if any(median(p.samples) > .14 for p in self.players):
                     self.ready_since = now
                     for player in self.players:
                         player.samples.clear()
                     return
                 for player in self.players:
-                    player.mouth = MouthCycle(float(np.median(player.samples)))
+                    player.mouth = MouthCycle(float(median(player.samples)))
                 self.state = 'countdown'
                 self.countdown_since = now
-                self.resuming = False
             return
         present = all(p.track_id in by_id and ratios.get(p.track_id) is not None and
                       by_id[p.track_id].face[2] >= self.min_face * .75 for p in self.players)
@@ -144,7 +143,7 @@ class CakeRace:
             self.resume_since = None
             if now - self.absent_since >= 10.:
                 self.reset()
-                self.reason = 'Match reset: face was lost for 10 seconds'
+                self.reason = '顔が10秒間映らなかったため、待機に戻りました'
             return
         if self.state == 'paused':
             if self.resume_since is None:
@@ -152,7 +151,6 @@ class CakeRace:
             if now - self.resume_since >= .8:
                 self.state = 'countdown'
                 self.countdown_since = now
-                self.resuming = True
             return
         if self.state == 'countdown':
             # カウントダウン中は何回口を動かしても得点にならない。
@@ -162,77 +160,18 @@ class CakeRace:
                     player.mouth.reset()
             return
         if self.state == 'playing':
-            self.elapsed += dt
+            self.elapsed = min(self.time_limit, self.elapsed + dt)
+            if self.elapsed >= self.time_limit:
+                best = max(p.hits for p in self.players)
+                self.winners = [i for i, p in enumerate(self.players) if p.hits == best]
+                self.state = 'result'
+                self.reason = '時間終了！'
+                return
             for i, player in enumerate(self.players):
                 if player.mouth.update(ratios[player.track_id], now):
                     player.hits += 1
                     player.last_bite = now
                     self.events.append(i)
-                    if player.hits >= self.total:
-                        player.finished = self.elapsed
-            finished = [i for i, p in enumerate(self.players) if p.finished is not None]
-            if finished:
-                # 同じフレームで完食した場合は引き分けにする。
-                self.winners = finished
-                self.state = 'result'
-                self.reason = 'ALL CAKES FINISHED!'
-            elif self.elapsed >= self.time_limit:
-                best = max(p.hits for p in self.players)
-                self.winners = [i for i, p in enumerate(self.players) if p.hits == best]
-                self.state = 'result'
-                self.reason = 'TIME UP!'
 
     def countdown(self, now):
         return max(1, 3 - int(now - self.countdown_since))
-
-
-class MouthEstimator:
-    def __init__(self, model):
-        if not hasattr(cv2, 'face'):
-            raise RuntimeError('opencv-contrib-python が必要です。READMEのセットアップを実行してください。')
-        self.facemark = cv2.face.createFacemarkLBF()
-        self.facemark.loadModel(str(model))
-        self.points = {}
-
-    def estimate(self, frame, tracks):
-        self.points = {}
-        if not tracks:
-            return {}
-        scale = min(1., 720 / frame.shape[1])
-        small = cv2.resize(frame, None, fx=scale, fy=scale) if scale < 1 else frame
-        gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
-        rectangles, selected = [], []
-        for track in tracks:
-            x, y, w, h = track.face[:4] * scale
-            x, y = max(0, int(x)), max(0, int(y))
-            w, h = min(int(w), gray.shape[1]-x), min(int(h), gray.shape[0]-y)
-            if w >= 45 and h >= 45:
-                rectangles.append((x, y, w, h))
-                selected.append(track)
-        if not selected:
-            return {}
-        try:
-            ok, landmarks = self.facemark.fit(gray, np.array(rectangles, np.int32))
-        except cv2.error:
-            return {}
-        if not ok:
-            return {}
-        ratios = {}
-        for track, landmark in zip(selected, landmarks):
-            pts = np.asarray(landmark).reshape(-1, 2) / scale
-            if pts.shape != (68, 2) or not np.isfinite(pts).all():
-                continue
-            mouth_width = np.linalg.norm(pts[48] - pts[54])
-            eye_mid = (track.face[4:6] + track.face[6:8]) / 2
-            eye_distance = np.linalg.norm(track.face[4:6] - track.face[6:8])
-            # 横顔や大きく崩れた推定では、誤って食べ進めない。
-            if not .15 * track.face[2] <= mouth_width <= .8 * track.face[2]:
-                continue
-            if abs(track.face[8] - eye_mid[0]) > eye_distance * .65:
-                continue
-            opening = sum(np.linalg.norm(pts[a] - pts[b]) for a, b in ((61, 67), (62, 66), (63, 65))) / 3
-            ratio = float(opening / max(mouth_width, 1.))
-            if 0 <= ratio <= 1.2:
-                ratios[track.number] = ratio
-                self.points[track.number] = pts
-        return ratios
