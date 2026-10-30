@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from commentary import Commentator
 
 voice = Commentator()
-race = SimpleNamespace(state='waiting', time_limit=30., elapsed=0., bites_per_cake=4,
+race = SimpleNamespace(state='waiting', player_count=2, time_limit=30., elapsed=0., bites_per_cake=4,
                        players=[SimpleNamespace(hits=0), SimpleNamespace(hits=0)], winners=[])
 try:
     print('ブラウザで「実況を開始」を押すと、架空の30秒対戦を実況します。', flush=True)

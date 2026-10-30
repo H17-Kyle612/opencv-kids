@@ -8,7 +8,7 @@ from commentary import Commentator, game_context
 
 
 def race(state='playing'):
-    return SimpleNamespace(state=state, time_limit=30., elapsed=10., bites_per_cake=4,
+    return SimpleNamespace(state=state, player_count=2, time_limit=30., elapsed=10., bites_per_cake=4,
                            players=[SimpleNamespace(hits=8), SimpleNamespace(hits=9)],
                            winners=[1] if state == 'result' else [])
 
@@ -24,8 +24,18 @@ def commentator():
 class CommentaryTests(unittest.TestCase):
     def test_context_contains_only_game_data(self):
         context = game_context(race('result'))
-        self.assertEqual(context, {'state':'result','remaining_seconds':20.,
+        self.assertEqual(context, {'mode':'versus','state':'result','remaining_seconds':20.,
                                   'bites':[8,9],'cakes':[2.,2.25],'winners':[2]})
+
+    def test_solo_context_has_no_opponent_or_winner(self):
+        game = race('result')
+        game.player_count = 1
+        game.players = game.players[:1]
+        game.winners = []
+        context = game_context(game)
+        self.assertEqual(context['mode'], 'solo')
+        self.assertEqual(context['cakes'], [2.])
+        self.assertEqual(context['winners'], [])
 
     def test_latest_context_replaces_backlog(self):
         voice = commentator()

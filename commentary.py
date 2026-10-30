@@ -20,7 +20,8 @@ def latest(target, value):
 
 
 def game_context(race, active=True):
-    return {'state': race.state if active else 'waiting',
+    return {'mode': 'solo' if race.player_count == 1 else 'versus',
+            'state': race.state if active else 'waiting',
             'remaining_seconds': round(max(0, race.time_limit-race.elapsed), 1),
             'bites': [p.hits for p in race.players],
             'cakes': [p.hits/race.bites_per_cake for p in race.players],
