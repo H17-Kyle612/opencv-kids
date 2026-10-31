@@ -1,14 +1,16 @@
+import {BackgroundContext} from './context.js';
 const $ = id => document.getElementById(id);
 const start=$('start'), stop=$('stop'), status=$('status'), audio=$('audio'), transcript=$('transcript');
 const editor=$('editor'), voice=$('voice'), apply=$('apply'), reset=$('reset');
 let peer, channel, context, oscillator, analyser, signal, completed=false, connecting=false;
+let background, sessionReady=false, backgroundReports=[], contextAcks=0, reportAt=0;
 let speech=false, lastLoud=0, statsAt=0, previousStats, defaults, lastSequence=-1;
 const json=value=>JSON.stringify(value,null,2);
 const fmt=iso=>iso?new Date(iso).toLocaleTimeString('ja-JP',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit',fractionalSecondDigits:3}):'—';
 async function get(path){const r=await fetch(path);const body=await r.json();if(!r.ok)throw Error(body.error||'取得できませんでした');return body;}
 async function post(path,body={}){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw Error(data.error||'接続に失敗しました');return data;}
 function cleanup(){
- completed=true;channel?.close();peer?.close();oscillator?.stop();context?.close();
+ completed=true;sessionReady=false;background?.close();background=null;channel?.close();peer?.close();oscillator?.stop();context?.close();
  peer=channel=context=oscillator=analyser=signal=null;speech=false;previousStats=null;audio.srcObject=null;
  start.disabled=connecting||!defaults;stop.disabled=true;
 }
@@ -19,6 +21,11 @@ async function connect(){
   context=new AudioContext({latencyHint:'interactive'});await context.resume();
   peer=new RTCPeerConnection();
   const connection=peer;
+  backgroundReports=[];contextAcks=0;sessionReady=false;
+  background=new BackgroundContext(()=>sessionReady?channel:null,
+   report=>{backgroundReports.push(report);backgroundReports=backgroundReports.slice(-8);},
+   error=>{status.textContent='背景更新エラー：'+error;});
+  background.start();
   peer.ontrack=event=>{
    if(peer!==connection)return;
    const stream=new MediaStream([event.track]);audio.srcObject=stream;
@@ -35,9 +42,11 @@ async function connect(){
    if(peer!==connection)return;
    const event=JSON.parse(data);
    if(event.type==='session.started'){
-    try{await post('ready');status.textContent='実況接続済み';stop.disabled=false;}
+    try{await post('ready');sessionReady=true;background?.flush();status.textContent='実況接続済み';stop.disabled=false;}
     catch(error){status.textContent=error.message;cleanup();}
-   }else if(event.type==='session.closed'||event.type==='error'){status.textContent='実況の接続が終了しました';cleanup();}
+   }else if(event.type==='session.context.appended'){contextAcks++;}
+   else if(event.type==='error'){background?.close();status.textContent='背景更新の受理エラー：'+(event.error?.message||event.message||JSON.stringify(event));}
+   else if(event.type==='session.closed'){status.textContent='実況の接続が終了しました';cleanup();}
   };
   channel.onclose=()=>{if(peer===connection&&!completed){status.textContent='実況の接続が終了しました';cleanup();}};
   peer.onconnectionstatechange=()=>{if(peer===connection&&connection.connectionState==='failed'){status.textContent='音声接続に失敗しました。もう一度開始してください';cleanup();}};
@@ -87,13 +96,13 @@ function renderDebug(s){
  const sent=d.sent.at(-1);
  if(sent){
   $('sentAt').textContent=`#${sent.sequence} 取得 ${fmt(sent.captured_at)} → 送信 ${fmt(sent.sent_at)}　${sent.status}`;
-  $('payload').textContent=sent.request.params.text;$('request').textContent=json(sent.request);
+  $('payload').textContent=sent.request.params.text||sent.request.params.content?.map(c=>c.text).join('\n')||json(sent.request.params);$('request').textContent=json(sent.request);
   const age=Math.max(0,Date.now()-Date.parse(sent.captured_at));
-  $('metrics').textContent=`実況制御：${d.speaking?'発話中・送信を待機':d.awaiting_audio?'音声を待機中':'次の展開に反応できます'}\n最新送信データの古さ ${age.toFixed(0)} ms ／ 送信待ち ${sent.queue_ms} ms ／ App Server受付 ${sent.ack_ms??'…'} ms\n音声受信 ${d.browser.bytes_received??'—'} bytes ／ 欠落パケット ${d.browser.packets_lost??'—'} ／ 破棄 ${d.browser.packets_discarded??'—'}\n直近の音声補間 ${d.browser.concealed_percent??'—'} %（うち無音 ${d.browser.silent_concealed_percent??'—'} %）\n平均ジッターバッファ ${d.browser.jitter_buffer_ms??'—'} ms ／ 往復通信 ${d.browser.rtt_ms??'—'} ms ／ 音声処理 ${d.browser.audio_context??'—'}`;
+  $('metrics').textContent=`実況制御：${d.speaking?'発話中・背景情報は更新を継続':d.awaiting_audio?'音声待ち・背景情報は更新を継続':'次の展開に反応できます'}\n背景送信 ${d.browser.background_total??0} 件 ／ 文脈受理通知 ${d.browser.context_acks??0} 件（音声指示を含む）\n最新送信データの古さ ${age.toFixed(0)} ms ／ 送信待ち ${sent.queue_ms} ms ／ App Server受付 ${sent.ack_ms??'…'} ms\n音声受信 ${d.browser.bytes_received??'—'} bytes ／ 欠落パケット ${d.browser.packets_lost??'—'} ／ 破棄 ${d.browser.packets_discarded??'—'}\n直近の音声補間 ${d.browser.concealed_percent??'—'} %（うち無音 ${d.browser.silent_concealed_percent??'—'} %）\n平均ジッターバッファ ${d.browser.jitter_buffer_ms??'—'} ms ／ 往復通信 ${d.browser.rtt_ms??'—'} ms ／ 音声処理 ${d.browser.audio_context??'—'}`;
   if(sent.sequence!==lastSequence){
    lastSequence=sent.sequence;$('history').replaceChildren(...d.sent.slice().reverse().map(e=>{
     const row=document.createElement('tr');
-    const values=[`#${e.sequence} ${fmt(e.sent_at)}`,`${e.context.state} ／ ${e.context.react?'実況を促す':'背景更新'}`,e.context.events.map(x=>eventNames[x.type]||x.type).join('、')||'—',`${e.queue_ms} ms ／ ${e.ack_ms??'…'} ms`];
+    const values=[`#${e.sequence} ${fmt(e.sent_at)}`,`${e.context.state} ／ ${e.transport==='webrtc_background'?'WebRTC背景':e.context.priority==='urgent'?'急展開':e.context.react?'実況の合図':'制御'}`,e.context.events.map(x=>eventNames[x.type]||x.type).join('、')||'—',`${e.queue_ms} ms ／ ${e.ack_ms??'…'} ms`];
     for(const value of values){const cell=document.createElement('td');cell.textContent=value;row.append(cell);}return row;
    }));
   }
@@ -122,14 +131,16 @@ async function measure(){
      silent_concealed_percent:delta>0&&Number.isFinite(silentRepaired)?Math.round(silentRepaired/delta*10000)/100:null,
      packets_discarded:report.packetsDiscarded,
      jitter_buffer_ms:report.jitterBufferEmittedCount?Math.round(report.jitterBufferDelay/report.jitterBufferEmittedCount*1000):null,
-     audio_context:context.state};
+     audio_context:context.state,background_total:background?.total??0,context_acks:contextAcks};
     previousStats={samples,concealed,silent};
    }
    for(const report of reports.values())if(report.type==='candidate-pair'&&report.state==='succeeded'&&report.nominated&&metrics)
     metrics.rtt_ms=report.currentRoundTripTime==null?null:Math.round(report.currentRoundTripTime*1000);
   }catch{}
  }
- if(type||metrics)post('playback',{type,at:new Date().toISOString(),metrics}).catch(()=>{});
+ const reports=now-reportAt>=500?backgroundReports.splice(0):[];
+ if(reports.length)reportAt=now;
+ if(type||metrics||reports.length)post('playback',{type,at:new Date().toISOString(),metrics,background_sent:reports}).catch(()=>{});
 }
 for(const [name,type] of [['waiting','audio_waiting'],['stalled','audio_stalled'],['playing','audio_playing']])
  audio.addEventListener(name,()=>post('playback',{type,at:new Date().toISOString()}).catch(()=>{}));

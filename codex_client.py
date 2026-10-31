@@ -113,7 +113,9 @@ class CodexClient:
 
     @staticmethod
     def context_params(thread_id, context):
-        if context.get('react'):
+        if context.get('priority') == 'urgent':
+            direction = ' 急展開です。音声を強制的に切らず、言いかけを短い区切りで収めて、この最新の展開へ移ってください。'
+        elif context.get('react'):
             direction = ' この展開への実況の合図です。' if context['state'] != 'result' else ' 確定結果を締めくくる合図です。'
         else:
             direction = ' 参考データの更新。合図済みの実況は取り消さず内容を最新にし、新しい発話は増やさない。'

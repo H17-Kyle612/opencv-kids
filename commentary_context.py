@@ -25,6 +25,8 @@ class MatchStory:
         self.announced = None
         self.match = 0
         self.last_reaction = -float('inf')
+        self.decisive_leader = None
+        self.last_urgent = -float('inf')
 
     def observe(self, race, now, active=True, allow_reaction=True):
         context = game_context(race, active)
@@ -38,6 +40,8 @@ class MatchStory:
             self.announced = None
             self.match += 1
             self.last_reaction = -float('inf')
+            self.decisive_leader = None
+            self.last_urgent = -float('inf')
         elapsed, hits = race.elapsed, tuple(context['bites'])
         if context['state'] == 'playing':
             if not self.history or elapsed > self.history[-1][0]:
@@ -59,6 +63,10 @@ class MatchStory:
             if recent[0]-before[0] >= 1.:
                 context['previous_bites_per_second'] = [round((a-b)/(recent[0]-before[0]), 2)
                                                        for a, b in zip(recent[1], before[1])]
+        decisive = context['leaders'][0] if len(context['leaders']) == 1 else None
+        reversal = decisive is not None and self.decisive_leader is not None and decisive != self.decisive_leader
+        if decisive is not None:
+            self.decisive_leader = decisive
         old = self.announced
         events = []
         changed = previous is None or context['state'] != previous['state'] or reset
@@ -80,7 +88,13 @@ class MatchStory:
             react = context['state'] == 'result' and (old is None or old['match'] != self.match or old['state'] != 'result')
             if react:
                 events.append({'type':'finish'})
-        react = react and allow_reaction
+        urgent = (context['state'] == 'playing' and reversal and now-self.last_urgent >= .5) or (context['state'] == 'result' and react)
+        if reversal and not any(e['type'] == 'lead_change' for e in events):
+            events.append({'type':'lead_change', 'leaders':context['leaders']})
+        react = (react and allow_reaction) or urgent
+        if urgent:
+            self.last_urgent = now
+        context['priority'] = 'urgent' if urgent else ('normal' if react else 'background')
         context['events'] = events
         context['react'] = react
         if react:

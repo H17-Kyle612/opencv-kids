@@ -112,15 +112,16 @@ class MatchStoryTests(unittest.TestCase):
         params = client.context_params('thread', context)
         self.assertIn('新しい発話は増やさない', params['text'])
 
-    def test_result_waits_for_busy_voice_then_announces_once(self):
+    def test_result_is_urgent_while_busy_and_announces_once(self):
         story = MatchStory()
         game = race()
         story.observe(game, 0.)
         game.state = 'result'
         context, _ = story.observe(game, 1., allow_reaction=False)
-        self.assertFalse(context['react'])
-        context, _ = story.observe(game, 2., allow_reaction=True)
         self.assertTrue(context['react'])
+        self.assertEqual(context['priority'], 'urgent')
+        context, _ = story.observe(game, 2., allow_reaction=True)
+        self.assertFalse(context['react'])
         context, _ = story.observe(game, 3., allow_reaction=True)
         self.assertFalse(context['react'])
 
@@ -140,12 +141,12 @@ class MatchStoryTests(unittest.TestCase):
         story = MatchStory()
         game = race()
         story.observe(game, 0.)
-        game.players[0].hits = 12
+        game.players[1].hits = 12
         quiet, _ = story.observe(game, 2., allow_reaction=False)
         self.assertFalse(quiet['react'])
         reaction, _ = story.observe(game, 3., allow_reaction=True)
         self.assertTrue(reaction['react'])
-        self.assertIn({'type':'cake_finished','player':1,'count':1}, reaction['events'])
+        self.assertIn({'type':'cake_finished','player':2,'count':1}, reaction['events'])
 
     def test_sending_interval_is_half_a_second_and_state_changes_are_immediate(self):
         voice = commentator()
@@ -159,6 +160,47 @@ class MatchStoryTests(unittest.TestCase):
         self.assertEqual(voice.pending.get_nowait()['context']['state'], 'paused')
 
 
+    def test_reversal_through_tie_is_immediate_even_during_speech(self):
+        voice = commentator()
+        game = race()
+        voice.update(game, 100.)
+        voice.pending.get_nowait()
+        voice.debug.playback({'type':'speech_started'})
+        game.players[0].hits = 9
+        voice.update(game, 100.5)
+        voice.pending.get_nowait()
+        game.players[0].hits = 10
+        voice.update(game, 100.55)
+        latest = voice.pending.get_nowait()['context']
+        self.assertEqual(latest['priority'], 'urgent')
+        self.assertTrue(latest['react'])
+        self.assertEqual(latest['leaders'], [1])
+
+    def test_background_is_observed_while_speaking_without_normal_cue(self):
+        voice = commentator()
+        game = race()
+        voice.update(game, 100.)
+        voice.pending.get_nowait()
+        voice.debug.playback({'type':'speech_started'})
+        game.players[1].hits += 1
+        voice.update(game, 100.5)
+        packet = voice.debug.context_after(1, timeout=0)
+        self.assertEqual(packet['sequence'], 2)
+        self.assertEqual(packet['context']['bites'], [8,10])
+        self.assertFalse(packet['context']['react'])
+
+    def test_solo_never_generates_a_leader_reversal(self):
+        story = MatchStory()
+        game = race()
+        game.player_count = 1
+        game.players = game.players[:1]
+        story.observe(game, 0.)
+        game.players[0].hits = 20
+        context, _ = story.observe(game, 2., allow_reaction=False)
+        self.assertFalse(context['react'])
+        self.assertEqual(context['leaders'], [])
+
+
 class DebugTests(unittest.TestCase):
     def test_reaction_waits_for_audio_and_speech_completion(self):
         debug = CommentaryDebug()
@@ -170,7 +212,7 @@ class DebugTests(unittest.TestCase):
         self.assertTrue(debug.should_send({'state':'paused','react':False}))
         debug.playback({'type':'speech_started'})
         self.assertFalse(debug.should_send({'state':'playing','react':False}))
-        self.assertFalse(debug.should_send({'state':'playing','react':True}))
+        self.assertTrue(debug.should_send({'state':'playing','react':True,'priority':'urgent'}))
         self.assertFalse(debug.should_send({'state':'result','react':False}))
         self.assertFalse(debug.can_react())
         debug.playback({'type':'speech_ended'})

@@ -9,7 +9,7 @@ import threading
 import webbrowser
 from codex_client import CodexClient, REQUESTED_MODEL
 from commentary_settings import CommentarySettings, DEFAULT_PROMPT, DEFAULT_VOICE
-from commentary_context import MatchStory
+from commentary_context import MatchStory, leaders
 from commentary_debug import CommentaryDebug, timestamp
 
 ROOT = Path(__file__).resolve().parent
@@ -21,6 +21,8 @@ def latest(target, value):
         old, new = older['context'], value['context']
         if old.get('react') and (old['match'], old['state']) == (new['match'], new['state']):
             new['react'] = True
+            if old.get('priority') == 'urgent' and old.get('leaders') == new.get('leaders'):
+                new['priority'] = 'urgent'
     except queue.Empty:
         pass
     target.put_nowait(value)
@@ -85,6 +87,24 @@ class Commentator:
                     self.respond((ROOT/'voice_player.html').read_bytes(), content_type='text/html; charset=utf-8')
                 elif path == 'font.ttf':
                     self.respond((ROOT/'assets/fonts/BIZUDPGothic-Bold.ttf').read_bytes(), content_type='font/ttf')
+                elif path == 'context-events':
+                    self.send_response(200)
+                    self.send_header('Content-Type','text/event-stream; charset=utf-8')
+                    self.send_header('Cache-Control','no-store')
+                    self.end_headers()
+                    sequence = 0
+                    try:
+                        while not owner.stopped.is_set():
+                            packet = owner.debug.context_after(sequence)
+                            if packet and packet['sequence'] != sequence:
+                                sequence = packet['sequence']
+                                wire = 'data: '+json.dumps(packet, ensure_ascii=False)+'\n\n'
+                            else:
+                                wire = ': keepalive\n\n'
+                            self.wfile.write(wire.encode())
+                            self.wfile.flush()
+                    except (BrokenPipeError, ConnectionResetError):
+                        pass
                 elif path == 'state':
                     self.respond({'transcript':owner.transcript, 'error':owner.error,
                                   'debug':owner.debug.snapshot(), 'active_settings':owner.active_settings})
@@ -100,6 +120,8 @@ class Commentator:
                         self.respond(result, 500 if 'error' in result else 200)
                     except (queue.Empty, queue.Full):
                         self.respond({'error':'声の一覧を取得できませんでした'}, 503)
+                elif path == 'context.js':
+                    self.respond((ROOT/'voice_context.js').read_bytes(), content_type='text/javascript; charset=utf-8')
                 elif path == 'player.js':
                     self.respond((ROOT/'voice_player.js').read_bytes(), content_type='text/javascript; charset=utf-8')
                 else:
@@ -253,7 +275,10 @@ class Commentator:
         state = race.state if active else 'waiting'
         changed = state != self.previous_state
         result_pending = state == 'result' and (self.story.announced is None or self.story.announced['state'] != 'result')
-        if changed or ((state == 'playing' or result_pending) and now-self.last_request >= .5):
+        current_leaders = leaders([p.hits for p in race.players]) if state == 'playing' else []
+        reversal = (len(current_leaders) == 1 and self.story.decisive_leader is not None
+                    and current_leaders[0] != self.story.decisive_leader)
+        if changed or reversal or ((state == 'playing' or result_pending) and now-self.last_request >= .5):
             context, _ = self.story.observe(race, now, active, allow_reaction=self.debug.can_react())
             self.debug.observe(context)
             latest(self.pending, {'context':context, 'monotonic':time.monotonic(), 'at':timestamp()})

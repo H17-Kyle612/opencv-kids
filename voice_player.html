@@ -9,7 +9,7 @@
 <button id="start" disabled>実況を開始</button><button id="stop" disabled>実況を停止</button>
 <p id="status" role="status">接続待ち</p><audio id="audio" controls autoplay></audio>
 <p id="transcript" aria-live="polite"></p>
-<small>Codex App Server → GPT-Live（実モデル名は未取得）。映像・マイク入力は送信しません。得点・残り時間と、そこから計算した直近のペースを送ります。</small>
+<small>Codex App Server → GPT-Live（実モデル名は未取得）。映像・マイク入力は送信しません。得点・残り時間・直近ペースを、発話中も背景情報として送ります。</small>
 <section class="card"><h2>遊びながら実況を調整</h2>
 <label for="voice">声（App Serverの候補）</label><select id="voice" disabled><option>候補を取得しています…</option></select>
 <label for="editor">実況プロンプト</label><textarea id="editor" rows="12" maxlength="12000" spellcheck="false" disabled></textarea>
@@ -20,9 +20,9 @@
 <div class="card"><h2>実況のデバッグ</h2><p id="metrics">送信待ち</p><p class="muted">「受付時間」はApp Serverの応答までです。音声検出はブラウザで受信した音の活動を記録します。送信と発話を厳密に対応付けるIDがないため、モデルの生成遅延とは区別して表示します。音声補間は無音の補間も含み、その値だけで聴感上の途切れとは断定できません。</p></div>
 <div class="grid">
 <section class="card"><h2>最新のゲーム状況</h2><small id="captured">未取得</small><pre id="current">データ待ち</pre></section>
-<section class="card"><h2>実際に送った内容</h2><small id="sentAt">未送信</small><pre id="payload">データ待ち</pre><details><summary>App Serverに送ったJSON-RPCパラメータ</summary><pre id="request"></pre></details></section>
+<section class="card"><h2>実際に送った内容</h2><small id="sentAt">未送信</small><pre id="payload">データ待ち</pre><details><summary>実際の送信パラメータ（App Server / WebRTC）</summary><pre id="request"></pre></details></section>
 </div>
 <section class="card"><details><summary>実況プロンプトとモデル設定</summary><pre id="prompt">取得中</pre></details></section>
 <section class="card"><h2>送信履歴（最新30件）</h2><div class="scroll"><table><thead><tr><th>番号・時刻</th><th>状態・反応</th><th>見せ場</th><th>待ち／受付</th></tr></thead><tbody id="history"></tbody></table></div></section>
 <section class="card"><h2>ブラウザの音声検出（最新20件）</h2><pre id="audioLog">音声未検出</pre><small>約0.1秒ごとの音量から検出。ブラウザが背景にあると計測頻度が下がることがあります。PCのスピーカーから出た音の実測ではありません。</small></section>
-<script src="player.js"></script></html>
+<script type="module" src="player.js"></script></html>

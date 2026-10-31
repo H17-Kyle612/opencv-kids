@@ -12,6 +12,8 @@ def timestamp():
 class CommentaryDebug:
     def __init__(self):
         self.lock = threading.Lock()
+        self.context_changed = threading.Condition(self.lock)
+        self.context_sequence = 0
         self.sent = deque(maxlen=30)
         self.audio = deque(maxlen=20)
         self.current = None
@@ -22,8 +24,36 @@ class CommentaryDebug:
         self.last_end = -float('inf')
 
     def observe(self, context):
+        with self.context_changed:
+            self.context_sequence += 1
+            self.current = {'sequence':self.context_sequence, 'at':timestamp(), 'context':context}
+            self.context_changed.notify_all()
+
+    def context_after(self, sequence, timeout=1.):
+        with self.context_changed:
+            self.context_changed.wait_for(lambda: self.context_sequence != sequence, timeout)
+            return self.current
+
+    def background_sent(self, report):
+        # ブラウザで実際に送った背景情報を、音声指示とは別の経路として記録する。
+        if not isinstance(report, dict) or not isinstance(report.get('payload'), dict):
+            return
+        payload = report['payload']
+        if payload.get('type') != 'session.context.append' or payload.get('channel') != 'commentary':
+            return
+        try:
+            context = report['context']
+            captured = report['captured_at']
+            sent = report['sent_at']
+            delay = max(0., (datetime.fromisoformat(sent)-datetime.fromisoformat(captured)).total_seconds()*1000)
+        except (KeyError, TypeError, ValueError):
+            return
         with self.lock:
-            self.current = {'at':timestamp(), 'context':context}
+            self.sequence += 1
+            self.sent.append({'sequence':self.sequence, 'captured_at':captured, 'sent_at':sent,
+                              'queue_ms':round(delay, 1), 'context':context, 'transport':'webrtc_background',
+                              'request':{'method':'session.context.append','params':payload},
+                              'status':'WebRTC送信済み（個別の受理対応は未確認）'})
 
     def sending(self, packet, params):
         now = time.monotonic()
@@ -32,7 +62,7 @@ class CommentaryDebug:
             entry = {'sequence':self.sequence, 'captured_at':packet['at'], 'sent_at':timestamp(),
                      'queue_ms':round((now-packet['monotonic'])*1000, 1),
                      'context':packet['context'], 'request':{'method':'thread/realtime/appendText', 'params':params},
-                     'status':'送信中'}
+                     'status':'送信中', 'transport':'app_server'}
             self.sent.append(entry)
             if packet['context'].get('react'):
                 self.reaction_at = now
@@ -44,6 +74,10 @@ class CommentaryDebug:
             entry['status'] = str(error) if error else 'App Server受付済み'
 
     def playback(self, event):
+        reports = event.get('background_sent', [])
+        if isinstance(reports, list):
+            for report in reports[-8:]:
+                self.background_sent(report)
         with self.lock:
             kind = event.get('type')
             if kind in ('audio_waiting', 'audio_stalled', 'audio_playing'):
@@ -56,7 +90,7 @@ class CommentaryDebug:
                     self.last_end = time.monotonic()
                     self.reaction_at = None
             if isinstance(event.get('metrics'), dict):
-                self.browser = event['metrics']
+                self.browser.update(event['metrics'])
 
     def can_react(self):
         with self.lock:
@@ -65,14 +99,8 @@ class CommentaryDebug:
                     (self.reaction_at is None or now-self.reaction_at >= 6.))
 
     def should_send(self, context):
-        with self.lock:
-            # 待機・一時停止の明示的な停止は優先する。実況中の説明は追加しない。
-            if context['state'] in ('waiting', 'ready', 'countdown', 'paused'):
-                return True
-            if self.speaking:
-                return False
-            return (context.get('react') or self.reaction_at is None or
-                    time.monotonic()-self.reaction_at >= 6.)
+        # 背景はWebRTCで常時更新。RPCでは発話の合図と明示的な停止だけを送る。
+        return bool(context.get('react')) or context['state'] in ('waiting', 'ready', 'countdown', 'paused')
 
     def reset_voice(self):
         with self.lock:
