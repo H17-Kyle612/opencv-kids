@@ -2,37 +2,20 @@
 <html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ケーキぱくぱく AI実況</title>
 <style>
-@font-face{font-family:BIZ;src:url('font.ttf')}body{font-family:BIZ,sans-serif;background:#102d28;color:#fff;max-width:660px;margin:8vh auto;padding:24px;line-height:1.8}h1{font-size:28px;color:#ffe599}button{font:inherit;padding:12px 22px;border:0;border-radius:12px;background:#ffe599;color:#173a31;cursor:pointer;margin:8px 8px 8px 0}button:disabled{opacity:.5}audio{display:block;width:100%;margin:24px 0}#transcript{min-height:4em;color:#fff3cf}small{color:#b9d3c7}#status{font-weight:bold}
+@font-face{font-family:BIZ;src:url('font.ttf')}*{box-sizing:border-box}body{font-family:BIZ,sans-serif;background:#102d28;color:#fff;max-width:1120px;margin:32px auto;padding:24px;line-height:1.8}h1{font-size:26px;color:#ffe599}h2{font-size:19px;margin-top:0}button{font:inherit;padding:10px 20px;border:0;border-radius:10px;background:#ffe599;color:#173a31;cursor:pointer;margin:8px 8px 8px 0}button:disabled{opacity:.5}audio{display:block;width:100%;margin:16px 0}#transcript{min-height:3em;color:#fff3cf;font-size:20px}small,.muted{color:#b9d3c7}#status{font-weight:bold}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.card{background:#193e35;border:1px solid #416157;border-radius:12px;padding:18px;margin:16px 0;min-width:0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.65 BIZ,monospace;max-height:340px;overflow:auto;background:#0b221d;padding:12px;border-radius:6px}summary{cursor:pointer;color:#ffe599}table{width:100%;font-size:12px;border-collapse:collapse}td,th{text-align:left;padding:8px;border-bottom:1px solid #416157;vertical-align:top}.scroll{overflow:auto}#metrics{white-space:pre-line} @media(max-width:780px){.grid{grid-template-columns:1fr}body{padding:12px}h1{font-size:22px}}
 </style>
 <h1>クリスマス・ケーキぱくぱく実況</h1>
-<p>「実況を開始」を押してから、ゲーム画面で遊んでください。このページを開いたままにすると実況が流れます。</p>
+<p>「実況を開始」を押して、ページを開いたままゲーム画面で遊んでください。</p>
 <button id="start">実況を開始</button><button id="stop" disabled>実況を停止</button>
 <p id="status" role="status">接続待ち</p><audio id="audio" controls autoplay></audio>
 <p id="transcript" aria-live="polite"></p>
-<small>Codex App Server → GPT-Live 1。マイクやカメラ映像は送信せず、残り時間と得点だけを実況に使います。</small>
-<script>
-const start=document.querySelector('#start'),stop=document.querySelector('#stop'),status=document.querySelector('#status'),audio=document.querySelector('#audio'),transcript=document.querySelector('#transcript');
-let peer,channel,context,oscillator,completed=false;
-const post=async(path,body={})=>{const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw Error(data.error||'接続に失敗しました');return data;};
-function cleanup(){completed=true;channel?.close();peer?.close();oscillator?.stop();context?.close();peer=channel=context=oscillator=null;audio.srcObject=null;start.disabled=false;stop.disabled=true;}
-start.onclick=async()=>{start.disabled=true;completed=false;transcript.textContent='';status.textContent='音声を接続しています…';try{
- peer=new RTCPeerConnection();
- peer.ontrack=event=>{audio.srcObject=new MediaStream([event.track]);audio.play().catch(()=>status.textContent='再生ボタンを押してください');};
- // Full-duplexモデルを動かすため無音の音声クロックを送る。マイクは取得しない。
- context=new AudioContext();await context.resume();oscillator=context.createOscillator();const gain=context.createGain();gain.gain.value=0;const dest=context.createMediaStreamDestination();oscillator.connect(gain);gain.connect(dest);oscillator.start();peer.addTrack(dest.stream.getAudioTracks()[0],dest.stream);
- channel=peer.createDataChannel('oai-events');
- channel.onmessage=async({data})=>{const event=JSON.parse(data);if(event.type==='session.started'){status.textContent='実況接続済み';stop.disabled=false;await post('ready');}
- else if(event.type==='output_audio_transcript.delta'){transcript.textContent+=event.delta||'';}
- else if(event.type==='output_audio_transcript.done'){transcript.textContent=event.transcript||event.text||transcript.textContent;}
- else if(event.type==='session.closed'||event.type==='error'){status.textContent='実況の接続が終了しました';cleanup();}};
- channel.onclose=()=>{if(!completed){status.textContent='実況の接続が終了しました';cleanup();}};
- peer.onconnectionstatechange=()=>{if(peer?.connectionState==='failed'){status.textContent='音声接続に失敗しました。もう一度開始してください';cleanup();}};
- await peer.setLocalDescription(await peer.createOffer());
- if(peer.iceGatheringState!=='complete')await new Promise((resolve,reject)=>{const timeout=setTimeout(()=>reject(Error('音声接続の準備が時間切れになりました')),10000);peer.addEventListener('icegatheringstatechange',()=>{if(peer.iceGatheringState==='complete'){clearTimeout(timeout);resolve();}});});
- const answer=await post('connect',{sdp:peer.localDescription.sdp});await peer.setRemoteDescription({type:'answer',sdp:answer.sdp});
-}catch(error){status.textContent=error.message;cleanup();}};
-stop.onclick=async()=>{cleanup();status.textContent='実況を停止しました';await post('stop');};
-// 文字起こしはApp Serverから受け取ったものを表示する。
-setInterval(async()=>{try{const r=await fetch('state');if(!r.ok)return;const s=await r.json();transcript.textContent=s.transcript;if(s.error){status.textContent=s.error;cleanup();}}catch{}},1000);
-window.addEventListener('pagehide',()=>navigator.sendBeacon('stop',new Blob(['{}'],{type:'application/json'})));
-</script></html>
+<small>Codex App Server → GPT-Live 1。映像・マイク入力は送信しません。得点・残り時間と、そこから計算した直近のペースを送ります。</small>
+<div class="card"><h2>実況のデバッグ</h2><p id="metrics">送信待ち</p><p class="muted">「受付時間」はApp Serverの応答までです。音声検出はブラウザで受信した音の活動を記録します。送信と発話を厳密に対応付けるIDがないため、モデルの生成遅延とは区別して表示します。</p></div>
+<div class="grid">
+<section class="card"><h2>最新のゲーム状況</h2><small id="captured">未取得</small><pre id="current">データ待ち</pre></section>
+<section class="card"><h2>実際に送った内容</h2><small id="sentAt">未送信</small><pre id="payload">データ待ち</pre><details><summary>App Serverに送ったJSON-RPCパラメータ</summary><pre id="request"></pre></details></section>
+</div>
+<section class="card"><details><summary>実況プロンプトとモデル設定</summary><pre id="prompt">取得中</pre></details></section>
+<section class="card"><h2>送信履歴（最新30件）</h2><div class="scroll"><table><thead><tr><th>番号・時刻</th><th>状態・反応</th><th>見せ場</th><th>待ち／受付</th></tr></thead><tbody id="history"></tbody></table></div></section>
+<section class="card"><h2>ブラウザの音声検出（最新20件）</h2><pre id="audioLog">音声未検出</pre><small>約0.1秒ごとの音量から検出。ブラウザが背景にあると計測頻度が下がることがあります。PCのスピーカーから出た音の実測ではありません。</small></section>
+<script src="player.js"></script></html>

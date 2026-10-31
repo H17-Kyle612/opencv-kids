@@ -105,14 +105,24 @@ class CodexClient:
                 return params['sdp']
         raise TimeoutError('GPT-Liveの音声接続が時間内に完了しませんでした')
 
+    @staticmethod
+    def context_params(thread_id, context):
+        if context.get('react'):
+            direction = (' 今の見せ場に、感情を声に乗せた1文（30文字以内）で反応。口数・おかわり・ペースの変化を捉える。視線・表情・手・呼吸は未観測なので描写しない。'
+                         if context['state'] != 'result' else ' 決着！最新の確定記録で達成感のある締めを1文だけ。視線・表情・手・呼吸は未観測。話し終えたら次のゲームまで無言。')
+        else:
+            direction = ' 参考データの更新。合図済みの実況は取り消さず内容を最新にし、新しい発話は増やさない。'
+            if context['state'] in ('waiting', 'ready', 'countdown', 'paused'):
+                direction += ' 今は発話を止めて待ってください。'
+        if context.get('react') and context.get('mode') == 'solo':
+            direction += ' 1人の記録挑戦です。相手・順位・勝敗・差を広げる等の対戦表現は使わない。'
+        return {'threadId':thread_id, 'role':'developer',
+                'text':json.dumps(context, ensure_ascii=False, separators=(',', ':'))+direction}
+
     def append_context(self, context):
-        self.rpc('thread/realtime/appendText', {
-            'threadId': self.thread_id,
-            'role': 'developer',
-            'text': json.dumps(context, ensure_ascii=False, separators=(',', ':')) +
-                    (' 最新の状況を今、日本語で短く一言実況してください。'
-                     if context['state'] in ('playing', 'result') else ' 今は無言で待ってください。'),
-        }, timeout=5)
+        params = self.context_params(self.thread_id, context)
+        self.rpc('thread/realtime/appendText', params, timeout=5)
+        return params
 
     def close(self):
         if self.process.poll() is None:

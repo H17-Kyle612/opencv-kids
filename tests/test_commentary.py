@@ -4,17 +4,22 @@ import unittest
 from unittest.mock import Mock
 from codex_client import CodexClient
 from types import SimpleNamespace
-from commentary import Commentator, game_context
+from commentary import Commentator
+from commentary_context import MatchStory, game_context
+from commentary_debug import CommentaryDebug
+import time
 
 
 def race(state='playing'):
     return SimpleNamespace(state=state, player_count=2, time_limit=30., elapsed=10., bites_per_cake=4,
-                           players=[SimpleNamespace(hits=8), SimpleNamespace(hits=9)],
+                           players=[SimpleNamespace(track_id=1, hits=8), SimpleNamespace(track_id=2, hits=9)],
                            winners=[1] if state == 'result' else [])
 
 
 def commentator():
     voice = Commentator.__new__(Commentator)
+    voice.story = MatchStory()
+    voice.debug = CommentaryDebug()
     voice.pending = queue.Queue(maxsize=1)
     voice.last_request = 0.
     voice.previous_state = None
@@ -44,19 +49,141 @@ class CommentaryTests(unittest.TestCase):
         later.players[0].hits = 16
         voice.update(later, 103.)
         self.assertEqual(voice.pending.qsize(), 1)
-        self.assertEqual(voice.pending.get_nowait()['bites'], [16,9])
+        self.assertEqual(voice.pending.get_nowait()['context']['bites'], [16,9])
+
+    def test_idle_state_is_not_sent_repeatedly(self):
+        voice = commentator()
+        voice.update(race('waiting'), 100.)
+        voice.pending.get_nowait()
+        voice.update(race('waiting'), 101.)
+        self.assertTrue(voice.pending.empty())
 
     def test_final_and_paused_states_bypass_periodic_interval(self):
         voice = commentator()
         voice.update(race(), 100.)
         voice.update(race('result'), 100.1)
-        self.assertEqual(voice.pending.get_nowait()['winners'], [2])
+        self.assertEqual(voice.pending.get_nowait()['context']['winners'], [2])
         voice.update(race('paused'), 100.2)
-        self.assertEqual(voice.pending.get_nowait()['state'], 'paused')
+        self.assertEqual(voice.pending.get_nowait()['context']['state'], 'paused')
 
     def test_disabled_game_sends_waiting_without_winner(self):
         self.assertEqual(game_context(race('result'), False)['state'], 'waiting')
         self.assertEqual(game_context(race('result'), False)['winners'], [])
+
+
+class MatchStoryTests(unittest.TestCase):
+    def test_recent_and_previous_pace_use_elapsed_game_time(self):
+        story = MatchStory()
+        game = race()
+        for second in range(7):
+            game.elapsed = float(second)
+            game.players[0].hits = second if second <= 3 else 3+(second-3)*2
+            game.players[1].hits = second
+            context, _ = story.observe(game, float(second))
+        self.assertEqual(context['recent_bites'], [6,3])
+        self.assertEqual(context['bites_per_second'], [2.,1.])
+        self.assertEqual(context['previous_bites_per_second'], [1.,1.])
+
+    def test_cake_and_lead_change_trigger_without_waiting_for_regular_reaction(self):
+        story = MatchStory()
+        game = race()
+        game.elapsed = 0.
+        game.players[0].hits, game.players[1].hits = 3, 4
+        story.observe(game, 0.)
+        game.elapsed = 1.5
+        game.players[0].hits = 5
+        context, _ = story.observe(game, 1.5)
+        self.assertTrue(context['react'])
+        self.assertIn({'type':'lead_change','leaders':[1]}, context['events'])
+        self.assertIn({'type':'cake_finished','player':1,'count':1}, context['events'])
+
+    def test_background_updates_do_not_request_a_speech_every_half_second(self):
+        story = MatchStory()
+        game = race()
+        story.observe(game, 0.)
+        context, _ = story.observe(game, .5)
+        self.assertFalse(context['react'])
+        client = CodexClient.__new__(CodexClient)
+        params = client.context_params('thread', context)
+        self.assertIn('新しい発話は増やさない', params['text'])
+
+    def test_result_waits_for_busy_voice_then_announces_once(self):
+        story = MatchStory()
+        game = race()
+        story.observe(game, 0.)
+        game.state = 'result'
+        context, _ = story.observe(game, 1., allow_reaction=False)
+        self.assertFalse(context['react'])
+        context, _ = story.observe(game, 2., allow_reaction=True)
+        self.assertTrue(context['react'])
+        context, _ = story.observe(game, 3., allow_reaction=True)
+        self.assertFalse(context['react'])
+
+    def test_restart_clears_old_pace_and_lead_history(self):
+        story = MatchStory()
+        game = race()
+        old, _ = story.observe(game, 10.)
+        game.elapsed = 0.
+        game.state = 'countdown'
+        context, changed = story.observe(game, 11.)
+        self.assertTrue(changed)
+        self.assertGreater(context['match'], old['match'])
+        self.assertNotIn('bites_per_second', context)
+        self.assertFalse(context['react'])
+
+    def test_blocked_reaction_preserves_events_until_next_available_speech(self):
+        story = MatchStory()
+        game = race()
+        story.observe(game, 0.)
+        game.players[0].hits = 12
+        quiet, _ = story.observe(game, 2., allow_reaction=False)
+        self.assertFalse(quiet['react'])
+        reaction, _ = story.observe(game, 3., allow_reaction=True)
+        self.assertTrue(reaction['react'])
+        self.assertIn({'type':'cake_finished','player':1,'count':1}, reaction['events'])
+
+    def test_sending_interval_is_half_a_second_and_state_changes_are_immediate(self):
+        voice = commentator()
+        voice.update(race(), 100.)
+        voice.pending.get_nowait()
+        voice.update(race(), 100.49)
+        self.assertTrue(voice.pending.empty())
+        voice.update(race(), 100.5)
+        self.assertFalse(voice.pending.empty())
+        voice.update(race('paused'), 100.51)
+        self.assertEqual(voice.pending.get_nowait()['context']['state'], 'paused')
+
+
+class DebugTests(unittest.TestCase):
+    def test_reaction_waits_for_audio_and_speech_completion(self):
+        debug = CommentaryDebug()
+        self.assertTrue(debug.can_react())
+        context = {'react':True}
+        debug.sending({'context':context,'at':'capture','monotonic':time.monotonic()}, {})
+        self.assertFalse(debug.can_react())
+        self.assertFalse(debug.should_send({'state':'playing','react':False}))
+        self.assertTrue(debug.should_send({'state':'paused','react':False}))
+        debug.playback({'type':'speech_started'})
+        self.assertTrue(debug.should_send({'state':'playing','react':False}))
+        self.assertFalse(debug.can_react())
+        debug.playback({'type':'speech_ended'})
+        self.assertFalse(debug.can_react())
+        debug.last_end -= 1.
+        self.assertTrue(debug.can_react())
+
+    def test_debug_records_exact_sent_payload_and_bounds_history(self):
+        debug = CommentaryDebug()
+        context = game_context(race())
+        params = CodexClient.context_params('thread', context)
+        for i in range(40):
+            entry, started = debug.sending({'context':context, 'at':'capture', 'monotonic':time.monotonic()}, params)
+            debug.acknowledge(entry, started)
+        state = debug.snapshot()
+        self.assertEqual(len(state['sent']), 30)
+        self.assertEqual(state['sent'][-1]['request']['params'], params)
+        self.assertEqual(state['sent'][-1]['status'], 'App Server受付済み')
+        debug.playback({'type':'speech_started','at':'browser-time'})
+        self.assertEqual(debug.snapshot()['audio'][-1]['browser_at'], 'browser-time')
 
 
 class AppServerVoiceTests(unittest.TestCase):

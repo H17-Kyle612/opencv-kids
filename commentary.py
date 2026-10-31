@@ -4,32 +4,33 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import queue
 import secrets
+import time
 import threading
 import webbrowser
-from codex_client import CodexClient
+from codex_client import CodexClient, PROMPT
+from commentary_context import MatchStory
+from commentary_debug import CommentaryDebug, timestamp
 
 ROOT = Path(__file__).resolve().parent
 
 
 def latest(target, value):
     try:
-        target.get_nowait()
+        older = target.get_nowait()
+        old, new = older['context'], value['context']
+        if old.get('react') and (old['match'], old['state']) == (new['match'], new['state']):
+            new['react'] = True
     except queue.Empty:
         pass
     target.put_nowait(value)
 
 
-def game_context(race, active=True):
-    return {'mode': 'solo' if race.player_count == 1 else 'versus',
-            'state': race.state if active else 'waiting',
-            'remaining_seconds': round(max(0, race.time_limit-race.elapsed), 1),
-            'bites': [p.hits for p in race.players],
-            'cakes': [p.hits/race.bites_per_cake for p in race.players],
-            'winners': [i+1 for i in race.winners] if active and race.state == 'result' else []}
-
 
 class Commentator:
     def __init__(self):
+        self.story = MatchStory()
+        self.debug = CommentaryDebug()
+        self.last_transcript_at = 0.
         self.pending = queue.Queue(maxsize=1)
         self.commands = queue.Queue(maxsize=2)
         self.stopped = threading.Event()
@@ -80,7 +81,12 @@ class Commentator:
                 elif path == 'font.ttf':
                     self.respond((ROOT/'assets/fonts/BIZUDPGothic-Bold.ttf').read_bytes(), content_type='font/ttf')
                 elif path == 'state':
-                    self.respond({'transcript':owner.transcript, 'error':owner.error})
+                    self.respond({'transcript':owner.transcript, 'error':owner.error,
+                                  'debug':owner.debug.snapshot()})
+                elif path == 'prompt':
+                    self.respond({'model':'gpt-live-1', 'voice':'cove', 'prompt':PROMPT})
+                elif path == 'player.js':
+                    self.respond((ROOT/'voice_player.js').read_bytes(), content_type='text/javascript; charset=utf-8')
                 else:
                     self.respond({'error':'ページがありません'}, 404)
 
@@ -93,6 +99,9 @@ class Commentator:
                         raise ValueError('リクエストのサイズが不正です')
                     body = json.loads(self.rfile.read(length))
                     action = self.path[len(owner.prefix):]
+                    if action == 'playback':
+                        owner.debug.playback(body)
+                        return self.respond({})
                     if action == 'ready':
                         owner.ready.set()
                         owner.status = '準備完了'
@@ -124,6 +133,7 @@ class Commentator:
                         client = None
                     self.error = ''
                     self.transcript = ''
+                    self.debug.reset_voice()
                     if action == 'stop':
                         self.status = '開始待ち'
                         reply.put({})
@@ -149,12 +159,26 @@ class Commentator:
                             except queue.Empty:
                                 context = None
                             if context:
-                                client.append_context(context)
+                                # キューに滞留した途中経過は読み上げず、次の最新更新を待つ。
+                                if ((time.monotonic()-context['monotonic'] < 1. or context['context']['state'] != 'playing')
+                                        and self.debug.should_send(context['context'])):
+                                    params = client.context_params(client.thread_id, context['context'])
+                                    entry, started = self.debug.sending(context, params)
+                                    try:
+                                        client.append_context(context['context'])
+                                    except Exception as error:
+                                        self.debug.acknowledge(entry, started, error)
+                                        raise
+                                    self.debug.acknowledge(entry, started)
                         message = client.events.popleft() if client.events else client._read(.05)
                         if message:
                             method, data = message.get('method'), message.get('params', {})
                             if method == 'thread/realtime/transcript/delta' and data.get('role') == 'assistant':
+                                moment = time.monotonic()
+                                if moment-self.last_transcript_at > 1.:
+                                    self.transcript = ''
                                 self.transcript = (self.transcript+data.get('delta', ''))[-200:]
+                                self.last_transcript_at = moment
                             elif method == 'thread/realtime/transcript/done' and data.get('role') == 'assistant':
                                 self.transcript = data.get('text', '')[-300:]
                                 print(f'GPT-Live実況: {self.transcript}', flush=True)
@@ -180,10 +204,14 @@ class Commentator:
         print(f'AI実況: {error}', flush=True)
 
     def update(self, race, now, active=True):
+        # 評価は送信時だけ行い、反応フラグを未送信のフレームで消費しない。
         state = race.state if active else 'waiting'
         changed = state != self.previous_state
-        if changed or (state == 'playing' and now-self.last_request >= 2.5):
-            latest(self.pending, game_context(race, active))
+        result_pending = state == 'result' and (self.story.announced is None or self.story.announced['state'] != 'result')
+        if changed or ((state == 'playing' or result_pending) and now-self.last_request >= .5):
+            context, _ = self.story.observe(race, now, active, allow_reaction=self.debug.can_react())
+            self.debug.observe(context)
+            latest(self.pending, {'context':context, 'monotonic':time.monotonic(), 'at':timestamp()})
             self.last_request = now
         self.previous_state = state
 
