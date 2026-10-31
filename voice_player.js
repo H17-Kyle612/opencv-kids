@@ -1,17 +1,18 @@
 import {BackgroundContext} from './context.js';
+import {SpeechActivity} from './activity.js';
 const $ = id => document.getElementById(id);
 const start=$('start'), stop=$('stop'), status=$('status'), audio=$('audio'), transcript=$('transcript');
 const editor=$('editor'), voice=$('voice'), apply=$('apply'), reset=$('reset');
 let peer, channel, context, oscillator, analyser, signal, completed=false, connecting=false;
 let background, sessionReady=false, backgroundReports=[], contextAcks=0, reportAt=0;
-let speech=false, lastLoud=0, statsAt=0, previousStats, defaults, lastSequence=-1;
+let activity=new SpeechActivity(), statsAt=0, previousStats, defaults, lastSequence=-1;
 const json=value=>JSON.stringify(value,null,2);
 const fmt=iso=>iso?new Date(iso).toLocaleTimeString('ja-JP',{hour12:false,hour:'2-digit',minute:'2-digit',second:'2-digit',fractionalSecondDigits:3}):'—';
 async function get(path){const r=await fetch(path);const body=await r.json();if(!r.ok)throw Error(body.error||'取得できませんでした');return body;}
 async function post(path,body={}){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw Error(data.error||'接続に失敗しました');return data;}
 function cleanup(){
  completed=true;sessionReady=false;background?.close();background=null;channel?.close();peer?.close();oscillator?.stop();context?.close();
- peer=channel=context=oscillator=analyser=signal=null;speech=false;previousStats=null;audio.srcObject=null;
+ peer=channel=context=oscillator=analyser=signal=null;activity=new SpeechActivity();previousStats=null;audio.srcObject=null;
  start.disabled=connecting||!defaults;stop.disabled=true;
 }
 async function connect(){
@@ -26,11 +27,14 @@ async function connect(){
    report=>{backgroundReports.push(report);backgroundReports=backgroundReports.slice(-8);},
    error=>{status.textContent='背景更新エラー：'+error;});
   background.start();
+  context.onstatechange=()=>{if(peer===connection)post('playback',{type:'audio_context',at:new Date().toISOString(),state:context.state}).catch(()=>{});};
   peer.ontrack=event=>{
    if(peer!==connection)return;
+   for(const [name,type] of [['mute','audio_track_muted'],['unmute','audio_track_unmuted'],['ended','audio_track_ended']])
+    event.track.addEventListener(name,()=>{if(peer===connection)post('playback',{type,at:new Date().toISOString()}).catch(()=>{});});
    const stream=new MediaStream([event.track]);audio.srcObject=stream;
    audio.play().catch(()=>status.textContent='再生ボタンを押してください');
-   const source=context.createMediaStreamSource(stream);analyser=context.createAnalyser();analyser.fftSize=256;
+   const source=context.createMediaStreamSource(stream);analyser=context.createAnalyser();analyser.fftSize=2048;
    signal=new Float32Array(analyser.fftSize);source.connect(analyser);
   };
   // Full-duplexモデルの音声クロック。マイクは取得せず、無音を送る。
@@ -85,7 +89,7 @@ async function loadSettings(){
  }catch(error){$('settingsStatus').textContent=error.message;}
 }
 const eventNames={start:'スタート',resume:'再開',cake_finished:'おかわり',lead_change:'リード変化',final_stretch:'終盤',finish:'フィニッシュ'};
-const audioNames={speech_started:'発声を検出',speech_ended:'無音を検出',audio_waiting:'再生待ち',audio_stalled:'再生の停滞',audio_playing:'再生開始'};
+const audioNames={speech_gap:'無音区間（息継ぎ等を含む）',audio_track_muted:'音声トラック受信停止',audio_track_unmuted:'音声トラック受信再開',audio_track_ended:'音声トラック終了',audio_context:'音声処理の状態変更',speech_started:'発声を検出',speech_ended:'無音を検出',audio_waiting:'再生待ち',audio_stalled:'再生の停滞',audio_playing:'再生開始'};
 function renderDebug(s){
  transcript.textContent=s.transcript;
  if(s.error&&!connecting){status.textContent=s.error;if(peer)cleanup();}
@@ -108,15 +112,15 @@ function renderDebug(s){
    }));
   }
  }
- $('audioLog').textContent=d.audio.map(e=>`${fmt(e.browser_at)}　${audioNames[e.type]||e.type}`).join('\n')||'音声未検出';
+ $('audioLog').textContent=d.audio.map(e=>`${fmt(e.browser_at)}　${audioNames[e.type]||e.type}${e.gap_ms!=null?' ／ '+e.gap_ms+' ms':''}${e.state?' ／ '+e.state:''}`).join('\n')||'音声未検出';
 }
 async function refresh(){try{renderDebug(await get('state'));}catch{}finally{setTimeout(refresh,500);}}
 async function measure(){
  if(!peer||!analyser||!signal)return;
+ const connection=peer;
  const now=performance.now();analyser.getFloatTimeDomainData(signal);
- const rms=Math.sqrt(signal.reduce((sum,x)=>sum+x*x,0)/signal.length);let type;
- if(rms>.008){lastLoud=now;if(!speech){speech=true;type='speech_started';}}
- else if(speech&&now-lastLoud>1000){speech=false;type='speech_ended';}
+ const rms=Math.sqrt(signal.reduce((sum,x)=>sum+x*x,0)/signal.length);
+ const event=activity.update(rms,now);
  let metrics;
  if(now-statsAt>2000){
   statsAt=now;
@@ -139,9 +143,10 @@ async function measure(){
     metrics.rtt_ms=report.currentRoundTripTime==null?null:Math.round(report.currentRoundTripTime*1000);
   }catch{}
  }
+ if(peer!==connection)return;
  const reports=now-reportAt>=500?backgroundReports.splice(0):[];
  if(reports.length)reportAt=now;
- if(type||metrics||reports.length)post('playback',{type,at:new Date().toISOString(),metrics,background_sent:reports}).catch(()=>{});
+ if(event||metrics||reports.length)post('playback',{...event,at:new Date().toISOString(),metrics,background_sent:reports}).catch(()=>{});
 }
 for(const [name,type] of [['waiting','audio_waiting'],['stalled','audio_stalled'],['playing','audio_playing']])
  audio.addEventListener(name,()=>post('playback',{type,at:new Date().toISOString()}).catch(()=>{}));

@@ -258,6 +258,17 @@ class DebugTests(unittest.TestCase):
         debug.last_end -= 1.
         self.assertTrue(debug.can_react())
 
+    def test_audio_gap_does_not_end_speech_and_keeps_diagnostic_details(self):
+        debug = CommentaryDebug()
+        debug.playback({'type':'speech_started'})
+        debug.playback({'type':'speech_gap','gap_ms':500})
+        state = debug.snapshot()
+        self.assertTrue(state['speaking'])
+        self.assertEqual(state['audio'][-1]['gap_ms'], 500)
+        self.assertFalse(debug.can_react())
+        debug.playback({'type':'audio_track_muted'})
+        self.assertEqual(debug.snapshot()['audio'][-1]['type'], 'audio_track_muted')
+
     def test_debug_records_exact_sent_payload_and_bounds_history(self):
         debug = CommentaryDebug()
         context = game_context(race())

@@ -120,6 +120,8 @@ class Commentator:
                         self.respond(result, 500 if 'error' in result else 200)
                     except (queue.Empty, queue.Full):
                         self.respond({'error':'声の一覧を取得できませんでした'}, 503)
+                elif path == 'activity.js':
+                    self.respond((ROOT/'voice_activity.js').read_bytes(), content_type='text/javascript; charset=utf-8')
                 elif path == 'context.js':
                     self.respond((ROOT/'voice_context.js').read_bytes(), content_type='text/javascript; charset=utf-8')
                 elif path == 'player.js':

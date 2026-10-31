@@ -80,11 +80,12 @@ class CommentaryDebug:
                 self.background_sent(report)
         with self.lock:
             kind = event.get('type')
-            if kind in ('audio_waiting', 'audio_stalled', 'audio_playing'):
-                self.audio.append({'received_at':timestamp(), 'browser_at':event.get('at'), 'type':kind})
+            if kind in ('audio_waiting', 'audio_stalled', 'audio_playing', 'speech_gap',
+                        'audio_track_muted', 'audio_track_unmuted', 'audio_track_ended', 'audio_context'):
+                self.audio.append({'received_at':timestamp(), 'browser_at':event.get('at'), 'type':kind, 'gap_ms':event.get('gap_ms'), 'state':event.get('state')})
             if kind in ('speech_started', 'speech_ended'):
                 self.audio.append({'received_at':timestamp(), 'browser_at':event.get('at'),
-                                   'type':event['type']})
+                                   'type':event['type'], 'gap_ms':event.get('gap_ms')})
                 self.speaking = event['type'] == 'speech_started'
                 if not self.speaking:
                     self.last_end = time.monotonic()
