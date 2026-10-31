@@ -237,7 +237,7 @@ class AppServerVoiceTests(unittest.TestCase):
         self.assertEqual(client.start_voice('offer'), 'answer')
         method, params = client.rpc.call_args.args
         self.assertEqual(method, 'thread/realtime/start')
-        self.assertEqual(params['model'], 'gpt-live-1')
+        self.assertNotIn('model', params)
         self.assertEqual(params['transport'], {'type':'webrtc','sdp':'offer'})
         self.assertFalse(params['includeStartupContext'])
 
@@ -248,7 +248,7 @@ class AppServerVoiceTests(unittest.TestCase):
         self.assertEqual(params['prompt'],'ケーキにちなんだ洒落を交えて実況。')
         self.assertEqual(params['voice'],'miko')
         self.assertIn('playing', params['initialItems'][0]['text'])
-        self.assertEqual(params['model'],'gpt-live-1')
+        self.assertNotIn('model', params)
 
     def test_voice_error_is_reported_without_model_fallback(self):
         client = self.client({'method':'thread/realtime/error','params':{'message':'unavailable'}})

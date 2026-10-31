@@ -229,7 +229,7 @@ CPUの取り合い、モデルの独立したインスタンス、同じフレ�
 ## AI音声実況（feature/ai-commentary）
 
 Codex App Serverの実験的な`thread/realtime/*`を使い、GPT-Liveの声を
-WebRTCで再生します。App Serverに渡す要求モデル名は`gpt-live-1`です。通常のテキストモデルによる実況生成やmacOSの読み上げは使用しません。
+WebRTCで再生します。アプリから音声モデル名を上書きせず、App Serverの有効な設定・既定値に従います。通常のテキストモデルによる実況生成やmacOSの読み上げは使用しません。
 確認した環境はCodex CLI 0.166.0とChatGPTログインです。
 APIキーログインの場合は開始を拒否します。利用可否・上限はアカウント側の制限に従います。
 
@@ -337,3 +337,34 @@ CLI 0.166.0のChatGPT認証・WebRTC経路で、`gpt-live-1.1`を要求した接
 したがって、接続成功を特定モデルへの切り替え成功とは扱いません。
 ブラウザには要求値と「実モデル名未取得」を分けて表示します。
 ChatGPTのChatにおけるモデル提供と、App Server経由でのモデル選択を同じものとは断定しません。
+
+
+### App Server音声仕様の確認（2026-10-31）
+
+確認対象はCodex CLI 0.166.0（公開安定リリース）、ソースコミット
+`6ff1e1ca3b30fc8b914720681fcf5fe62e95f856`です。
+
+- `thread/realtime/start`は実験的API。`model`はセッション単位の任意指定です。
+  通常の`thread/start.model`（バックエンドの推論モデル）とは別です。
+- 音声モデルはRPC指定、`experimental_realtime_ws_model`の設定、組み込み既定値の順に決まります。
+  この環境に設定の上書きはなく、0.166.0のV3既定名は`gpt-live-1-codex`です。
+- 公開クライアントはモデル名をセッションJSONに入れて転送します。ChatGPT認証のWebRTCでは
+  ChatGPTのCodexバックエンドの`realtime/calls`を使います。一般APIのLive接続とは経路が異なります。
+- WebRTCはChatGPT認証で利用できます。一方、0.166.0のスタンドアロンWebSocket経路ではAPIキーが必要です。
+- 開始通知にはスレッドID・セッションID・プロトコルバージョンがあり、実モデル名の欄はありません。
+- GPT-Live-1.1／QuipというChatGPT製品のモデル名と、App Serverのモデル名の対応表・
+  選択可能な音声モデル一覧を返すRPCは、確認した公開仕様にはありません。
+  `listVoices`は声の候補であり、モデル一覧ではありません。
+- アプリは一般API向けモデル名の固定指定を外しました。これはApp Server標準の動作に合わせる変更であり、
+  特定の内部モデルへの更新を保証するものではありません。
+
+公開実装：
+[パラメータ定義](https://github.com/openai/codex/blob/6ff1e1ca3b30fc8b914720681fcf5fe62e95f856/codex-rs/app-server-protocol/src/protocol/v2/realtime.rs#L193)、
+[既定値と選択順](https://github.com/openai/codex/blob/6ff1e1ca3b30fc8b914720681fcf5fe62e95f856/codex-rs/core/src/realtime_conversation.rs#L1599)、
+[WebRTC接続先と送信形](https://github.com/openai/codex/blob/6ff1e1ca3b30fc8b914720681fcf5fe62e95f856/codex-rs/codex-api/src/endpoint/realtime_call.rs#L129)、
+[開始通知の項目](https://github.com/openai/codex/blob/6ff1e1ca3b30fc8b914720681fcf5fe62e95f856/codex-rs/app-server-protocol/src/protocol/v2/realtime.rs#L382)。
+
+公式資料：
+[App Server](https://learn.chatgpt.com/docs/app-server)、
+[ChatGPT Voiceのモデル・提供枠](https://help.openai.com/ja-jp/articles/20001274-chatgpt-voice)、
+[デスクトップ音声の利用枠](https://learn.chatgpt.com/docs/pricing)。
