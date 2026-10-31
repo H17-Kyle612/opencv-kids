@@ -7,7 +7,10 @@ from statistics import median
 
 class MouthCycle:
     """閉→開→閉を1口とする。継続時間・加点間隔の制限は設けない。"""
-    def __init__(self, baseline=.025):
+    def __init__(self, baseline=.025, sensitivity=4):
+        if sensitivity not in range(1, 6):
+            raise ValueError("sensitivityは1〜5です")
+        self.sensitivity = sensitivity
         self.baseline = baseline
         self.reset()
 
@@ -19,8 +22,9 @@ class MouthCycle:
         if ratio is None or not math.isfinite(ratio):
             self.reset()
             return False
-        close = max(.065, self.baseline + .035)
-        opening = max(.11, self.baseline + .07)
+        scale = (1., .85, .7, .55, .4)[self.sensitivity-1]
+        close = max(.065*scale, self.baseline + .035*scale)
+        opening = max(.11*scale, self.baseline + .07*scale)
         if ratio <= close:
             bite = self.opened
             self.opened = False
@@ -44,12 +48,21 @@ class Player:
 class CakeRace:
     bites_per_cake = 4
 
-    def __init__(self, min_face=160, time_limit=30., player_count=2):
+    def __init__(self, min_face=160, time_limit=30., player_count=2, sensitivity=4):
         if min_face < 40 or not math.isfinite(time_limit) or time_limit <= 0:
             raise ValueError('min_face>=40、time_limit>0 が必要です')
         self.min_face = min_face
         self.time_limit = time_limit
         self.set_player_count(player_count)
+        self.set_sensitivity(sensitivity)
+
+    def set_sensitivity(self, sensitivity):
+        if sensitivity not in range(1, 6):
+            raise ValueError("sensitivityは1〜5です")
+        self.sensitivity = sensitivity
+        for player in self.players:
+            player.mouth.sensitivity = sensitivity
+            player.mouth.reset()
 
     def set_player_count(self, player_count):
         if player_count not in (1, 2):
@@ -120,7 +133,7 @@ class CakeRace:
                         player.samples.clear()
                     return
                 for player in self.players:
-                    player.mouth = MouthCycle(float(median(player.samples)))
+                    player.mouth = MouthCycle(float(median(player.samples)), self.sensitivity)
                 self.state = 'countdown'
                 self.countdown_since = now
             return
