@@ -11,6 +11,8 @@ import time
 from commentary_settings import DEFAULT_PROMPT
 
 PROMPT = DEFAULT_PROMPT
+# App Serverへ渡す要求値。ChatGPT認証経路の実モデル名を保証するものではない。
+REQUESTED_MODEL = 'gpt-live-1'
 
 
 class CodexClient:
@@ -90,7 +92,7 @@ class CodexClient:
             initial += '\n現在のゲーム状況：'+json.dumps(initial_context, ensure_ascii=False)
         self.rpc('thread/realtime/start', {
             'threadId': self.thread_id, 'outputModality': 'audio',
-            'version': 'v3', 'model': 'gpt-live-1', 'voice': voice,
+            'version': 'v3', 'model': REQUESTED_MODEL, 'voice': voice,
             'transport': {'type': 'webrtc', 'sdp': offer},
             'includeStartupContext': False, 'clientManagedHandoffs': True,
             'flushTranscriptTailOnSessionEnd': False,

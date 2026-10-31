@@ -228,8 +228,8 @@ CPUの取り合い、モデルの独立したインスタンス、同じフレ�
 
 ## AI音声実況（feature/ai-commentary）
 
-Codex App Serverの実験的な`thread/realtime/*`を使い、`gpt-live-1`の声を
-WebRTCで再生します。通常のテキストモデルによる実況生成やmacOSの読み上げは使用しません。
+Codex App Serverの実験的な`thread/realtime/*`を使い、GPT-Liveの声を
+WebRTCで再生します。App Serverに渡す要求モデル名は`gpt-live-1`です。通常のテキストモデルによる実況生成やmacOSの読み上げは使用しません。
 確認した環境はCodex CLI 0.166.0とChatGPTログインです。
 APIキーログインの場合は開始を拒否します。利用可否・上限はアカウント側の制限に従います。
 
@@ -323,3 +323,17 @@ AI実況付きの1人モードは `--players 1 --commentary` を併用します�
 ブラウザの通信診断は欠落・破棄パケット、直近区間の音声補間（無音補間も別表示）、
 往復時間、WebRTCのジッターバッファ、AudioContextの状態、再生待ち・停滞イベントを表示します。
 これらの値だけで、モデルの言い直し・ネットワーク・再生負荷のどれが原因かを断定はできません。
+
+
+### 要求モデル名と実モデル名
+
+ChatGPT Liveの公式ヘルプにはGPT-Live-1.1とGPT-Live-1.1 Quipが記載されています。
+Quipはモデルの種類であり、声の名前ではありません。
+[ChatGPT Voice公式ヘルプ](https://help.openai.com/ja-jp/articles/20001274-chatgpt-voice)。
+
+CLI 0.166.0のChatGPT認証・WebRTC経路で、`gpt-live-1.1`を要求した接続と日本語応答を確認しました。
+ただし、明らかに無効なモデル名でも接続と応答が成功し、`session.started`には実モデル名が返りませんでした。
+この結果だけでは、指定が反映されたのか、無効な値が無視または既定値に置換されたのかは区別できません。
+したがって、接続成功を特定モデルへの切り替え成功とは扱いません。
+ブラウザには要求値と「実モデル名未取得」を分けて表示します。
+ChatGPTのChatにおけるモデル提供と、App Server経由でのモデル選択を同じものとは断定しません。

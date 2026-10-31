@@ -7,7 +7,7 @@ import secrets
 import time
 import threading
 import webbrowser
-from codex_client import CodexClient
+from codex_client import CodexClient, REQUESTED_MODEL
 from commentary_settings import CommentarySettings, DEFAULT_PROMPT, DEFAULT_VOICE
 from commentary_context import MatchStory
 from commentary_debug import CommentaryDebug, timestamp
@@ -89,7 +89,7 @@ class Commentator:
                     self.respond({'transcript':owner.transcript, 'error':owner.error,
                                   'debug':owner.debug.snapshot(), 'active_settings':owner.active_settings})
                 elif path == 'prompt':
-                    self.respond({'model':'gpt-live-1', 'saved':owner.settings.snapshot(),
+                    self.respond({'requested_model':REQUESTED_MODEL, 'actual_model':None, 'saved':owner.settings.snapshot(),
                                   'active':owner.active_settings, 'default_prompt':DEFAULT_PROMPT,
                                   'default_voice':DEFAULT_VOICE})
                 elif path == 'voices':
@@ -184,7 +184,7 @@ class Commentator:
                             self.active_settings = chosen
                             self.status = '音声接続待ち'
                             reply.put({'sdp':answer})
-                            print('AI実況: Codex App Server / GPT-Live 1 / WebRTC / ChatGPTログイン', flush=True)
+                            print('AI実況: Codex App Server / GPT-Live（実モデル名未取得） / WebRTC / ChatGPTログイン', flush=True)
                         except Exception as error:
                             self._failure(error)
                             reply.put({'error':self.error})

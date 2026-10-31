@@ -81,7 +81,7 @@ function renderDebug(s){
  if(s.error&&!connecting){status.textContent=s.error;if(peer)cleanup();}
  const active=s.active_settings;
  $('activeSettings').textContent=active?`適用中：声 ${active.voice} ／ 設定 #${active.revision}`:'実況は未接続';
- $('prompt').textContent=active?`モデル：gpt-live-1\n声：${active.voice}\n\n${active.prompt}`:'まだ実況に適用されていません。上の入力欄は保存する設定です。';
+ $('prompt').textContent=active?`要求モデル：${defaults?.requested_model||defaults?.model||'gpt-live-1'}\n実モデル：未取得（App Server応答に識別情報なし）\n声：${active.voice}\n\n${active.prompt}`:'まだ実況に適用されていません。上の入力欄は保存する設定です。';
  const d=s.debug;
  if(d.current){$('current').textContent=json(d.current.context);$('captured').textContent='取得 '+fmt(d.current.at);}
  const sent=d.sent.at(-1);
