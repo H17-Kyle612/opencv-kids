@@ -21,8 +21,24 @@ class MouthTests(unittest.TestCase):
 
     def test_closed_mouth_noise_does_not_count(self):
         mouth = MouthCycle(.025)
-        sequence = [(0., .02), (.08, .02), (.16, .08), (.24, .08), (.32, .02), (.40, .02)]
+        sequence = [(0., .02), (.08, .02), (.16, .04), (.24, .04), (.32, .02), (.40, .02)]
         self.assertEqual(sum(mouth.update(ratio) for now, ratio in sequence), 0)
+
+    def test_default_counts_a_gentle_opening_that_old_threshold_rejected(self):
+        sequence = (.025, .07, .025)
+        easy, old = MouthCycle(), MouthCycle(sensitivity=1)
+        self.assertEqual(sum(easy.update(r) for r in sequence), 1)
+        self.assertEqual(sum(old.update(r) for r in sequence), 0)
+
+    def test_sensitivity_is_monotonic_for_different_closed_baselines(self):
+        for baseline in (.005, .025, .08, .13):
+            previous = 0
+            for level in range(1, 6):
+                mouth = MouthCycle(baseline, level)
+                count = sum(mouth.update(r) for r in (baseline, baseline+.045, baseline))
+                self.assertGreaterEqual(count, previous)
+                previous = count
+            self.assertEqual(previous, 1)
 
     def test_holding_open_does_not_count(self):
         mouth = MouthCycle()
@@ -44,6 +60,24 @@ class RaceTests(unittest.TestCase):
         self.race = CakeRace()
         self.tracks = [track(1, 180), track(2, 850)]
         self.now = 0.
+
+    def test_live_sensitivity_change_preserves_score_and_time_and_clears_partial_bite(self):
+        from cake_game import Player
+        self.race.players = [Player(1), Player(2)]
+        self.race.state = 'playing'
+        self.race.elapsed = 12.
+        for player in self.race.players:
+            player.hits = 7
+            player.mouth.update(.025)
+            player.mouth.update(.2)
+        self.race.set_sensitivity(5)
+        self.assertEqual((self.race.state, self.race.elapsed), ('playing',12.))
+        for player in self.race.players:
+            self.assertEqual(player.hits, 7)
+            self.assertEqual(player.mouth.sensitivity, 5)
+            self.assertFalse(player.mouth.update(.025))
+        self.race.reset()
+        self.assertEqual(self.race.sensitivity, 5)
 
     def step(self, ratios=None, tracks=None, duration=.1):
         self.now += duration

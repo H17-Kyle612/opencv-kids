@@ -42,6 +42,9 @@ class GameVisuals:
             return
         h, w = frame.shape[:2]
         unit = min(w/1280, h/720)
+        panel(frame, (0, h-28*unit, w, h))
+        text(frame, f'口の感度 {race.sensitivity}/5　+：上げる　-：下げる',
+             (w/2, h-10*unit), .38*unit)
         solo = race.player_count == 1
         centers = [(w*.5, h*.78)] if solo else [(w*.25, h*.78), (w*.75, h*.78)]
         mode = '1人チャレンジ' if solo else '2人対戦'

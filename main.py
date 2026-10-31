@@ -39,6 +39,7 @@ def main():
     parser.add_argument('--mirror-only', action='store_true', help='ゲームを自動開始しない')
     parser.add_argument('--min-face', type=int, default=160, help='ゲーム開始に必要な顔幅（既定: 160px）')
     parser.add_argument('--time-limit', type=float, default=30., help='制限時間（秒、既定: 30）')
+    parser.add_argument('--mouth-sensitivity', type=int, choices=range(1, 6), default=4, help='口の感度（1〜5、大きいほど小さな開閉で反応。既定: 4）')
     parser.add_argument('--mouth-debug', action='store_true', help='口の特徴点と開き具合を表示')
     parser.add_argument('--head-offset', type=float, default=0., help='頭の飾りの上下位置（顔幅に対する比率、正で下）')
     parser.add_argument('--preview-file', type=Path, help='確認用の投影画像を0.5秒ごとにローカル保存（任意）')
@@ -59,7 +60,7 @@ def main():
     if not lbf.is_file():
         raise RuntimeError('口検出モデルがありません。python setup_models.py を実行してください。')
     estimator = MouthEstimator(lbf)
-    race = CakeRace(min_face=args.min_face, time_limit=args.time_limit, player_count=args.players)
+    race = CakeRace(min_face=args.min_face, time_limit=args.time_limit, player_count=args.players, sensitivity=args.mouth_sensitivity)
     visuals = GameVisuals()
     sounds = SoundEffects(enabled=not args.no_sound)
     commentator = None
@@ -83,7 +84,7 @@ def main():
             cv2.setWindowProperty(WINDOW, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         last = time.monotonic()
         fps = 0.
-        print('M: 1人／2人切替 | G: ゲーム切替 | R: 再試合 | SPACE: シャッフル | 1-6: 素材確認 | ↑↓: 頭の飾り位置 | D: 位置ガイド | S: 保存 | F: 全画面 | H: 説明 | Q/ESC: 終了', flush=True)
+        print('M: 1人／2人切替 | G: ゲーム切替 | R: 再試合 | SPACE: シャッフル | 1-6: 素材確認 | +/-: 口の感度 | ↑↓: 頭の飾り位置 | D: 位置ガイド | S: 保存 | F: 全画面 | H: 説明 | Q/ESC: 終了', flush=True)
         while True:
             ok, frame = cap.read()
             if not ok or frame is None:
@@ -139,6 +140,11 @@ def main():
             elif key in (ord('m'), ord('M')):
                 race.set_player_count(2 if race.player_count == 1 else 1)
                 game_enabled = True
+            elif key in (ord('+'), ord('='), ord('-')):
+                level = max(1, min(5, race.sensitivity + (-1 if key == ord('-') else 1)))
+                if level != race.sensitivity:
+                    race.set_sensitivity(level)
+                    print(f'口の感度: {level}/5', flush=True)
             elif ord('1') <= key <= ord('6'):
                 tracker.choose(LOOKS[key - ord('1')])
             elif key in (0xF700, 2490368, 65362):
