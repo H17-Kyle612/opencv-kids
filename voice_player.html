@@ -2,15 +2,22 @@
 <html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ケーキぱくぱく AI実況</title>
 <style>
-@font-face{font-family:BIZ;src:url('font.ttf')}*{box-sizing:border-box}body{font-family:BIZ,sans-serif;background:#102d28;color:#fff;max-width:1120px;margin:32px auto;padding:24px;line-height:1.8}h1{font-size:26px;color:#ffe599}h2{font-size:19px;margin-top:0}button{font:inherit;padding:10px 20px;border:0;border-radius:10px;background:#ffe599;color:#173a31;cursor:pointer;margin:8px 8px 8px 0}button:disabled{opacity:.5}audio{display:block;width:100%;margin:16px 0}#transcript{min-height:3em;color:#fff3cf;font-size:20px}small,.muted{color:#b9d3c7}#status{font-weight:bold}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.card{background:#193e35;border:1px solid #416157;border-radius:12px;padding:18px;margin:16px 0;min-width:0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.65 BIZ,monospace;max-height:340px;overflow:auto;background:#0b221d;padding:12px;border-radius:6px}summary{cursor:pointer;color:#ffe599}table{width:100%;font-size:12px;border-collapse:collapse}td,th{text-align:left;padding:8px;border-bottom:1px solid #416157;vertical-align:top}.scroll{overflow:auto}#metrics{white-space:pre-line} @media(max-width:780px){.grid{grid-template-columns:1fr}body{padding:12px}h1{font-size:22px}}
+@font-face{font-family:BIZ;src:url('font.ttf')}*{box-sizing:border-box}body{font-family:BIZ,sans-serif;background:#102d28;color:#fff;max-width:1120px;margin:32px auto;padding:24px;line-height:1.8}h1{font-size:26px;color:#ffe599}h2{font-size:19px;margin-top:0}button{font:inherit;padding:10px 20px;border:0;border-radius:10px;background:#ffe599;color:#173a31;cursor:pointer;margin:8px 8px 8px 0}button:disabled{opacity:.5}textarea,select{font:inherit;color:#fff;background:#0b221d;border:1px solid #75978b;border-radius:8px;padding:10px;max-width:100%}textarea{width:100%;line-height:1.6;resize:vertical}label{display:block;margin:12px 0 6px}select{min-width:180px}audio{display:block;width:100%;margin:16px 0}#transcript{min-height:3em;color:#fff3cf;font-size:20px}small,.muted{color:#b9d3c7}#status{font-weight:bold}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.card{background:#193e35;border:1px solid #416157;border-radius:12px;padding:18px;margin:16px 0;min-width:0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.65 BIZ,monospace;max-height:340px;overflow:auto;background:#0b221d;padding:12px;border-radius:6px}summary{cursor:pointer;color:#ffe599}table{width:100%;font-size:12px;border-collapse:collapse}td,th{text-align:left;padding:8px;border-bottom:1px solid #416157;vertical-align:top}.scroll{overflow:auto}#metrics{white-space:pre-line} @media(max-width:780px){.grid{grid-template-columns:1fr}body{padding:12px}h1{font-size:22px}}
 </style>
 <h1>クリスマス・ケーキぱくぱく実況</h1>
 <p>「実況を開始」を押して、ページを開いたままゲーム画面で遊んでください。</p>
-<button id="start">実況を開始</button><button id="stop" disabled>実況を停止</button>
+<button id="start" disabled>実況を開始</button><button id="stop" disabled>実況を停止</button>
 <p id="status" role="status">接続待ち</p><audio id="audio" controls autoplay></audio>
 <p id="transcript" aria-live="polite"></p>
 <small>Codex App Server → GPT-Live 1。映像・マイク入力は送信しません。得点・残り時間と、そこから計算した直近のペースを送ります。</small>
-<div class="card"><h2>実況のデバッグ</h2><p id="metrics">送信待ち</p><p class="muted">「受付時間」はApp Serverの応答までです。音声検出はブラウザで受信した音の活動を記録します。送信と発話を厳密に対応付けるIDがないため、モデルの生成遅延とは区別して表示します。</p></div>
+<section class="card"><h2>遊びながら実況を調整</h2>
+<label for="voice">声（App Serverの候補）</label><select id="voice" disabled><option>候補を取得しています…</option></select>
+<label for="editor">実況プロンプト</label><textarea id="editor" rows="12" maxlength="12000" spellcheck="false" disabled></textarea>
+<button id="apply" disabled>保存して反映</button><button id="reset" disabled>熱狂・ウィット重視の標準文に戻す</button>
+<p id="settingsStatus" role="status">設定を読み込んでいます…</p><small id="activeSettings">実況は未接続</small>
+<p class="muted">変更はこのPCに保存されます。反映時は実況だけを再接続するため数秒間音声が止まります。ゲームの時間・得点はそのまま進みます。接続中に画面を書き換えるだけでは反映されません。</p>
+</section>
+<div class="card"><h2>実況のデバッグ</h2><p id="metrics">送信待ち</p><p class="muted">「受付時間」はApp Serverの応答までです。音声検出はブラウザで受信した音の活動を記録します。送信と発話を厳密に対応付けるIDがないため、モデルの生成遅延とは区別して表示します。音声補間は無音の補間も含み、その値だけで聴感上の途切れとは断定できません。</p></div>
 <div class="grid">
 <section class="card"><h2>最新のゲーム状況</h2><small id="captured">未取得</small><pre id="current">データ待ち</pre></section>
 <section class="card"><h2>実際に送った内容</h2><small id="sentAt">未送信</small><pre id="payload">データ待ち</pre><details><summary>App Serverに送ったJSON-RPCパラメータ</summary><pre id="request"></pre></details></section>

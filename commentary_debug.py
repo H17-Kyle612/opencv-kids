@@ -45,7 +45,10 @@ class CommentaryDebug:
 
     def playback(self, event):
         with self.lock:
-            if event.get('type') in ('speech_started', 'speech_ended'):
+            kind = event.get('type')
+            if kind in ('audio_waiting', 'audio_stalled', 'audio_playing'):
+                self.audio.append({'received_at':timestamp(), 'browser_at':event.get('at'), 'type':kind})
+            if kind in ('speech_started', 'speech_ended'):
                 self.audio.append({'received_at':timestamp(), 'browser_at':event.get('at'),
                                    'type':event['type']})
                 self.speaking = event['type'] == 'speech_started'
@@ -63,9 +66,13 @@ class CommentaryDebug:
 
     def should_send(self, context):
         with self.lock:
-            # 発声準備中に背景指示を重ねず、最初の実況を優先させる。
-            return (context.get('react') or context['state'] != 'playing' or self.speaking or
-                    self.reaction_at is None or time.monotonic()-self.reaction_at >= 6.)
+            # 待機・一時停止の明示的な停止は優先する。実況中の説明は追加しない。
+            if context['state'] in ('waiting', 'ready', 'countdown', 'paused'):
+                return True
+            if self.speaking:
+                return False
+            return (context.get('react') or self.reaction_at is None or
+                    time.monotonic()-self.reaction_at >= 6.)
 
     def reset_voice(self):
         with self.lock:

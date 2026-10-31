@@ -13,3 +13,7 @@ outputs/*
 # Download with setup_models.py; upstream model provenance in README
 models/lbfmodel.yaml
 models/*.download
+
+# Browser-edited commentary preferences (local only)
+.commentary-settings.json
+.commentary-settings.tmp

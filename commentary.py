@@ -7,7 +7,8 @@ import secrets
 import time
 import threading
 import webbrowser
-from codex_client import CodexClient, PROMPT
+from codex_client import CodexClient
+from commentary_settings import CommentarySettings, DEFAULT_PROMPT, DEFAULT_VOICE
 from commentary_context import MatchStory
 from commentary_debug import CommentaryDebug, timestamp
 
@@ -28,6 +29,10 @@ def latest(target, value):
 
 class Commentator:
     def __init__(self):
+        self.settings = CommentarySettings()
+        self.active_settings = None
+        self.voices = []
+        self.refresh_context = threading.Event()
         self.story = MatchStory()
         self.debug = CommentaryDebug()
         self.last_transcript_at = 0.
@@ -82,9 +87,19 @@ class Commentator:
                     self.respond((ROOT/'assets/fonts/BIZUDPGothic-Bold.ttf').read_bytes(), content_type='font/ttf')
                 elif path == 'state':
                     self.respond({'transcript':owner.transcript, 'error':owner.error,
-                                  'debug':owner.debug.snapshot()})
+                                  'debug':owner.debug.snapshot(), 'active_settings':owner.active_settings})
                 elif path == 'prompt':
-                    self.respond({'model':'gpt-live-1', 'voice':'cove', 'prompt':PROMPT})
+                    self.respond({'model':'gpt-live-1', 'saved':owner.settings.snapshot(),
+                                  'active':owner.active_settings, 'default_prompt':DEFAULT_PROMPT,
+                                  'default_voice':DEFAULT_VOICE})
+                elif path == 'voices':
+                    reply = queue.Queue(maxsize=1)
+                    try:
+                        owner.commands.put_nowait(('voices', None, reply))
+                        result = reply.get(timeout=30)
+                        self.respond(result, 500 if 'error' in result else 200)
+                    except (queue.Empty, queue.Full):
+                        self.respond({'error':'声の一覧を取得できませんでした'}, 503)
                 elif path == 'player.js':
                     self.respond((ROOT/'voice_player.js').read_bytes(), content_type='text/javascript; charset=utf-8')
                 else:
@@ -99,10 +114,16 @@ class Commentator:
                         raise ValueError('リクエストのサイズが不正です')
                     body = json.loads(self.rfile.read(length))
                     action = self.path[len(owner.prefix):]
+                    if not isinstance(body, dict):
+                        raise ValueError('設定の形式が不正です')
+                    if action == 'settings':
+                        value = owner.settings.save(body.get('prompt'), body.get('voice'), owner.voices)
+                        return self.respond({'saved':value})
                     if action == 'playback':
                         owner.debug.playback(body)
                         return self.respond({})
                     if action == 'ready':
+                        owner.refresh_context.set()
                         owner.ready.set()
                         owner.status = '準備完了'
                         return self.respond({})
@@ -126,22 +147,41 @@ class Commentator:
                     action, offer, reply = self.commands.get_nowait()
                 except queue.Empty:
                     action = None
+                if action == 'voices':
+                    try:
+                        if client is None:
+                            client = CodexClient(on_process=lambda p: setattr(self, 'server_process', p))
+                        catalog = client.rpc('thread/realtime/listVoices', {})
+                        self.voices = catalog.get('voices', {}).get('v3', [])
+                        if not self.voices:
+                            raise RuntimeError('App ServerからGPT-Liveの声の候補が返されませんでした')
+                        reply.put({'voices':self.voices})
+                    except Exception as error:
+                        reply.put({'error':str(error)})
+                    action = None
                 if action:
                     self.ready.clear()
-                    if client:
+                    if client and (self.active_settings is not None or action == 'stop'):
                         client.close()
                         client = None
                     self.error = ''
                     self.transcript = ''
                     self.debug.reset_voice()
+                    self.active_settings = None
                     if action == 'stop':
                         self.status = '開始待ち'
                         reply.put({})
                     else:
                         try:
                             self.status = '接続中'
-                            client = CodexClient(on_process=lambda p: setattr(self, 'server_process', p))
-                            answer = client.start_voice(offer)
+                            if client is None:
+                                client = CodexClient(on_process=lambda p: setattr(self, 'server_process', p))
+                            chosen = self.settings.snapshot()
+                            self.settings.validate(chosen['prompt'], chosen['voice'], self.voices or None)
+                            current = self.debug.snapshot()['current']
+                            answer = client.start_voice(offer, prompt=chosen['prompt'], voice=chosen['voice'],
+                                                        initial_context=current['context'] if current else None)
+                            self.active_settings = chosen
                             self.status = '音声接続待ち'
                             reply.put({'sdp':answer})
                             print('AI実況: Codex App Server / GPT-Live 1 / WebRTC / ChatGPTログイン', flush=True)
@@ -205,6 +245,11 @@ class Commentator:
 
     def update(self, race, now, active=True):
         # 評価は送信時だけ行い、反応フラグを未送信のフレームで消費しない。
+        if self.refresh_context.is_set():
+            self.refresh_context.clear()
+            self.previous_state = None
+            self.story.announced = None
+            self.story.last_reaction = -float('inf')
         state = race.state if active else 'waiting'
         changed = state != self.previous_state
         result_pending = state == 'result' and (self.story.announced is None or self.story.announced['state'] != 'result')

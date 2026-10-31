@@ -2,14 +2,15 @@
 from collections import deque
 import json
 import os
-from pathlib import Path
 import select
 import shutil
 import subprocess
 import tempfile
 import time
 
-PROMPT = (Path(__file__).resolve().parent/'commentary_prompt.txt').read_text()
+from commentary_settings import DEFAULT_PROMPT
+
+PROMPT = DEFAULT_PROMPT
 
 
 class CodexClient:
@@ -83,15 +84,18 @@ class CodexClient:
             self.events.append(message)
         raise TimeoutError(f'Codex {method} が時間内に応答しませんでした')
 
-    def start_voice(self, offer):
+    def start_voice(self, offer, prompt=None, voice='cove', initial_context=None):
+        initial = '最新のゲーム状況が届くまで無言で待つ。すでにplayingやresultなら、その状況から実況する。'
+        if initial_context:
+            initial += '\n現在のゲーム状況：'+json.dumps(initial_context, ensure_ascii=False)
         self.rpc('thread/realtime/start', {
             'threadId': self.thread_id, 'outputModality': 'audio',
-            'version': 'v3', 'model': 'gpt-live-1', 'voice': 'cove',
+            'version': 'v3', 'model': 'gpt-live-1', 'voice': voice,
             'transport': {'type': 'webrtc', 'sdp': offer},
             'includeStartupContext': False, 'clientManagedHandoffs': True,
             'flushTranscriptTailOnSessionEnd': False,
-            'prompt': PROMPT,
-            'initialItems': [{'role': 'developer', 'text': '現在は待機中です。試合開始まで無言で待ってください。'}],
+            'prompt': PROMPT if prompt is None else prompt,
+            'initialItems': [{'role':'developer', 'text':initial}],
         })
         deadline = time.monotonic()+30
         while time.monotonic() < deadline:
@@ -108,14 +112,11 @@ class CodexClient:
     @staticmethod
     def context_params(thread_id, context):
         if context.get('react'):
-            direction = (' 今の見せ場に、感情を声に乗せた1文（30文字以内）で反応。口数・おかわり・ペースの変化を捉える。視線・表情・手・呼吸は未観測なので描写しない。'
-                         if context['state'] != 'result' else ' 決着！最新の確定記録で達成感のある締めを1文だけ。視線・表情・手・呼吸は未観測。話し終えたら次のゲームまで無言。')
+            direction = ' この展開への実況の合図です。' if context['state'] != 'result' else ' 確定結果を締めくくる合図です。'
         else:
             direction = ' 参考データの更新。合図済みの実況は取り消さず内容を最新にし、新しい発話は増やさない。'
             if context['state'] in ('waiting', 'ready', 'countdown', 'paused'):
                 direction += ' 今は発話を止めて待ってください。'
-        if context.get('react') and context.get('mode') == 'solo':
-            direction += ' 1人の記録挑戦です。相手・順位・勝敗・差を広げる等の対戦表現は使わない。'
         return {'threadId':thread_id, 'role':'developer',
                 'text':json.dumps(context, ensure_ascii=False, separators=(',', ':'))+direction}
 

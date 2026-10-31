@@ -8,6 +8,10 @@ from commentary import Commentator
 from commentary_context import MatchStory, game_context
 from commentary_debug import CommentaryDebug
 import time
+import threading
+import tempfile
+from pathlib import Path
+from commentary_settings import CommentarySettings
 
 
 def race(state='playing'):
@@ -18,6 +22,7 @@ def race(state='playing'):
 
 def commentator():
     voice = Commentator.__new__(Commentator)
+    voice.refresh_context = threading.Event()
     voice.story = MatchStory()
     voice.debug = CommentaryDebug()
     voice.pending = queue.Queue(maxsize=1)
@@ -164,7 +169,9 @@ class DebugTests(unittest.TestCase):
         self.assertFalse(debug.should_send({'state':'playing','react':False}))
         self.assertTrue(debug.should_send({'state':'paused','react':False}))
         debug.playback({'type':'speech_started'})
-        self.assertTrue(debug.should_send({'state':'playing','react':False}))
+        self.assertFalse(debug.should_send({'state':'playing','react':False}))
+        self.assertFalse(debug.should_send({'state':'playing','react':True}))
+        self.assertFalse(debug.should_send({'state':'result','react':False}))
         self.assertFalse(debug.can_react())
         debug.playback({'type':'speech_ended'})
         self.assertFalse(debug.can_react())
@@ -186,6 +193,37 @@ class DebugTests(unittest.TestCase):
         self.assertEqual(debug.snapshot()['audio'][-1]['browser_at'], 'browser-time')
 
 
+class SettingsTests(unittest.TestCase):
+    def test_prompt_and_voice_persist_without_changing_default_template(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)/'settings.json'
+            settings = CommentarySettings(path)
+            original = settings.snapshot()
+            result = settings.save('ウィットを効かせて実況。', 'miko', ['cove','miko'])
+            self.assertEqual(result['revision'], original['revision']+1)
+            self.assertEqual(CommentarySettings(path).snapshot(), result)
+
+    def test_invalid_settings_do_not_overwrite_saved_preferences(self):
+        with tempfile.TemporaryDirectory() as folder:
+            settings = CommentarySettings(Path(folder)/'settings.json')
+            original = settings.snapshot()
+            for prompt, voice in [('', 'cove'), ('x'*12001,'cove'), ('声を変える','unknown')]:
+                with self.assertRaises(ValueError):
+                    settings.save(prompt,voice,['cove'])
+                self.assertEqual(settings.snapshot(), original)
+
+    def test_reconnecting_refreshes_narration_without_resetting_game(self):
+        voice = commentator()
+        game = race()
+        voice.update(game,100.)
+        voice.pending.get_nowait()
+        voice.refresh_context.set()
+        voice.update(game,100.1)
+        self.assertEqual(voice.pending.get_nowait()['context']['bites'], [8,9])
+        self.assertEqual(game.elapsed,10.)
+        self.assertEqual(game.state,'playing')
+
+
 class AppServerVoiceTests(unittest.TestCase):
     def client(self, event):
         client = CodexClient.__new__(CodexClient)
@@ -202,6 +240,15 @@ class AppServerVoiceTests(unittest.TestCase):
         self.assertEqual(params['model'], 'gpt-live-1')
         self.assertEqual(params['transport'], {'type':'webrtc','sdp':'offer'})
         self.assertFalse(params['includeStartupContext'])
+
+    def test_browser_prompt_and_selected_voice_are_passed_to_app_server(self):
+        client = self.client({'method':'thread/realtime/sdp','params':{'sdp':'answer'}})
+        client.start_voice('offer',prompt='ケーキにちなんだ洒落を交えて実況。',voice='miko',initial_context={'state':'playing','bites':[12]})
+        params = client.rpc.call_args.args[1]
+        self.assertEqual(params['prompt'],'ケーキにちなんだ洒落を交えて実況。')
+        self.assertEqual(params['voice'],'miko')
+        self.assertIn('playing', params['initialItems'][0]['text'])
+        self.assertEqual(params['model'],'gpt-live-1')
 
     def test_voice_error_is_reported_without_model_fallback(self):
         client = self.client({'method':'thread/realtime/error','params':{'message':'unavailable'}})
