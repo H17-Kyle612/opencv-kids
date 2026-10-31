@@ -15,8 +15,10 @@ export class BackgroundContext {
  flush(){
   const channel=this.getChannel(), packet=this.packet;
   if(!packet||packet.sequence===this.lastSequence||!channel||channel.readyState!=='open'||channel.bufferedAmount>16384)return;
+  // 無言時の終了だけはRPCが確定結果を伝える。二経路で同じ締めを促さない。
+  if(packet.context.state==='result'&&packet.context.react){this.lastSequence=packet.sequence;return;}
   // 発話を要求するフラグを背景側へ流さない。常にその時点の最新情報1件だけを送る。
-  const context={...packet.context,react:false,priority:'background'};
+  const context={...packet.context,react:false,priority:packet.context.priority==='urgent'?'urgent':'background'};
   const payload={type:'session.context.append',channel:'commentary',content:[{type:'input_text',text:JSON.stringify(context)}]};
   channel.send(JSON.stringify(payload));this.lastSequence=packet.sequence;this.total++;
   this.report({captured_at:packet.at,sent_at:new Date().toISOString(),context,payload});

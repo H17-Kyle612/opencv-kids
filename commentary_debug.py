@@ -100,7 +100,7 @@ class CommentaryDebug:
 
     def should_send(self, context):
         # 背景はWebRTCで常時更新。RPCでは発話の合図と明示的な停止だけを送る。
-        return bool(context.get('react')) or context['state'] in ('waiting', 'ready', 'countdown', 'paused')
+        return context['state'] in ('waiting', 'ready', 'countdown', 'paused') or (bool(context.get('react')) and self.can_react())
 
     def reset_voice(self):
         with self.lock:

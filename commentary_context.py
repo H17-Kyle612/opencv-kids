@@ -24,6 +24,8 @@ class MatchStory:
         self.previous = None
         self.announced = None
         self.match = 0
+        self.event_sequence = 0
+        self.last_event = -float('inf')
         self.last_reaction = -float('inf')
         self.decisive_leader = None
         self.last_urgent = -float('inf')
@@ -39,6 +41,8 @@ class MatchStory:
             self.history.clear()
             self.announced = None
             self.match += 1
+            self.event_sequence = 0
+            self.last_event = -float('inf')
             self.last_reaction = -float('inf')
             self.decisive_leader = None
             self.last_urgent = -float('inf')
@@ -68,22 +72,25 @@ class MatchStory:
         if decisive is not None:
             self.decisive_leader = decisive
         old = self.announced
+        observed = previous['context'] if previous and not reset else None
         events = []
         changed = previous is None or context['state'] != previous['state'] or reset
         if context['state'] == 'playing':
             if changed:
                 events.append({'type': 'start' if elapsed < 1 else 'resume'})
-            if old and old['match'] == self.match:
-                for i, (a, b) in enumerate(zip(context['cakes'], old['cakes'])):
+            if observed and observed['match'] == self.match:
+                for i, (a, b) in enumerate(zip(context['cakes'], observed['cakes'])):
                     if int(a) > int(b):
                         events.append({'type':'cake_finished', 'player':i+1, 'count':int(a)-int(b)})
-                if context['leaders'] and old['leaders'] != context['leaders']:
+                if context['leaders'] and observed['leaders'] != context['leaders']:
                     events.append({'type':'lead_change', 'leaders':context['leaders']})
                 for seconds in (10, 5):
-                    if old['remaining_seconds'] > seconds >= context['remaining_seconds']:
+                    if observed['remaining_seconds'] > seconds >= context['remaining_seconds']:
                         events.append({'type':'final_stretch', 'remaining_seconds':seconds})
             # 単発の口数よりも、おかわり・逆転など競技上の展開を優先する。
-            react = changed or (now-self.last_reaction >= 1.2 and bool(events)) or now-self.last_reaction >= 3.5
+            if events:
+                self.last_event = now
+            react = changed or (now-self.last_reaction >= 1.2 and self.last_event > self.last_reaction) or now-self.last_reaction >= 3.5
         else:
             react = context['state'] == 'result' and (old is None or old['match'] != self.match or old['state'] != 'result')
             if react:
@@ -91,14 +98,20 @@ class MatchStory:
         urgent = (context['state'] == 'playing' and reversal and now-self.last_urgent >= .5) or (context['state'] == 'result' and react)
         if reversal and not any(e['type'] == 'lead_change' for e in events):
             events.append({'type':'lead_change', 'leaders':context['leaders']})
-        react = (react and allow_reaction) or urgent
+        finish = context['state'] == 'result' and react
+        react = (react or urgent) and allow_reaction
         if urgent:
             self.last_urgent = now
         context['priority'] = 'urgent' if urgent else ('normal' if react else 'background')
+        if events:
+            self.event_sequence += 1
+        context['event_id'] = f'{self.match}:{self.event_sequence}' if events else None
         context['events'] = events
         context['react'] = react
-        if react:
+        # 発話中の終了は背景で伝える。後から同じ終了を発話指示で再送しない。
+        if react or finish:
             self.announced = context.copy()
+        if react:
             self.last_reaction = now
-        self.previous = {'identity':identity, 'elapsed':elapsed, 'state':context['state']}
+        self.previous = {'identity':identity, 'elapsed':elapsed, 'state':context['state'], 'context':context.copy()}
         return context, changed

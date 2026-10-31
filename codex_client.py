@@ -114,15 +114,20 @@ class CodexClient:
     @staticmethod
     def context_params(thread_id, context):
         if context.get('priority') == 'urgent':
-            direction = ' 急展開です。音声を強制的に切らず、言いかけを短い区切りで収めて、この最新の展開へ移ってください。'
+            direction = ' 最新の見せ場です。すでに伝えた出来事は繰り返さず、未実況の展開だけを自然な1文で伝えてください。'
         elif context.get('react'):
             direction = ' この展開への実況の合図です。' if context['state'] != 'result' else ' 確定結果を締めくくる合図です。'
         else:
             direction = ' 参考データの更新。合図済みの実況は取り消さず内容を最新にし、新しい発話は増やさない。'
             if context['state'] in ('waiting', 'ready', 'countdown', 'paused'):
                 direction += ' 今は発話を止めて待ってください。'
+        spoken = context
+        if context.get('react') and context['state'] == 'playing':
+            # 得点や出来事は背景で届く。合図側で同じ出来事を新着として重ねない。
+            spoken = {key:context[key] for key in ('mode', 'state', 'match', 'react', 'priority') if key in context}
+            direction += ' 最新の背景情報に基づき、未実況の展開だけを伝えてください。'
         return {'threadId':thread_id, 'role':'developer',
-                'text':json.dumps(context, ensure_ascii=False, separators=(',', ':'))+direction}
+                'text':json.dumps(spoken, ensure_ascii=False, separators=(',', ':'))+direction}
 
     def append_context(self, context):
         params = self.context_params(self.thread_id, context)

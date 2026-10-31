@@ -215,7 +215,9 @@ class Commentator:
                                 client = None
                 if client:
                     try:
-                        if self.ready.is_set():
+                        control = self.previous_state in ('waiting', 'ready', 'countdown', 'paused')
+                        # 発話中は合図を差し込まない。背景は独立したWebRTC経路で更新する。
+                        if self.ready.is_set() and (control or self.debug.can_react()):
                             try:
                                 context = self.pending.get_nowait()
                             except queue.Empty:
@@ -281,7 +283,7 @@ class Commentator:
         if changed or reversal or ((state == 'playing' or result_pending) and now-self.last_request >= .5):
             context, _ = self.story.observe(race, now, active, allow_reaction=self.debug.can_react())
             self.debug.observe(context)
-            latest(self.pending, {'context':context, 'monotonic':time.monotonic(), 'at':timestamp()})
+            latest(self.pending, {'context':context.copy(), 'monotonic':time.monotonic(), 'at':timestamp()})
             self.last_request = now
         self.previous_state = state
 

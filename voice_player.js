@@ -77,7 +77,8 @@ editor.oninput=voice.onchange=()=>{$('settingsStatus').textContent='未保存の
 async function loadSettings(){
  try{
   const [settings,catalog]=await Promise.all([get('prompt'),get('voices')]);defaults=settings;
-  voice.replaceChildren(...catalog.voices.map(name=>{const option=document.createElement('option');option.value=option.textContent=name;return option;}));
+  const descriptions={breeze:'実況の第一候補・躍動感',ember:'実況候補・自信と前向きさ',juniper:'実況候補・明るさ',spruce:'穏やかで肯定的',himari:'日本語向け・試聴候補',rindo:'日本語向け・試聴候補'};
+  voice.replaceChildren(...catalog.voices.map(name=>{const option=document.createElement('option');option.value=name;option.textContent=descriptions[name]?`${name} — ${descriptions[name]}`:name;return option;}));
   voice.value=catalog.voices.includes(settings.saved.voice)?settings.saved.voice:'';
   editor.value=settings.saved.prompt;editor.disabled=voice.disabled=apply.disabled=reset.disabled=start.disabled=false;
   $('settingsStatus').textContent=voice.value?'編集して「保存して反映」で変更できます。':'保存した声は現在利用できません。候補から選んで保存してください。';

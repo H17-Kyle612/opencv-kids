@@ -71,6 +71,13 @@ class CommentaryTests(unittest.TestCase):
         voice.update(race('paused'), 100.2)
         self.assertEqual(voice.pending.get_nowait()['context']['state'], 'paused')
 
+    def test_speech_cue_does_not_repeat_background_events_or_scores(self):
+        context, _ = MatchStory().observe(race(), 100.)
+        params = CodexClient.context_params('thread', context)
+        self.assertNotIn('"events":', params['text'])
+        self.assertNotIn('"bites":', params['text'])
+        self.assertIn('未実況の展開だけ', params['text'])
+
     def test_disabled_game_sends_waiting_without_winner(self):
         self.assertEqual(game_context(race('result'), False)['state'], 'waiting')
         self.assertEqual(game_context(race('result'), False)['winners'], [])
@@ -112,18 +119,30 @@ class MatchStoryTests(unittest.TestCase):
         params = client.context_params('thread', context)
         self.assertIn('新しい発話は増やさない', params['text'])
 
-    def test_result_is_urgent_while_busy_and_announces_once(self):
+    def test_result_is_background_while_busy_and_does_not_replay_when_idle(self):
         story = MatchStory()
         game = race()
         story.observe(game, 0.)
         game.state = 'result'
         context, _ = story.observe(game, 1., allow_reaction=False)
-        self.assertTrue(context['react'])
+        self.assertFalse(context['react'])
         self.assertEqual(context['priority'], 'urgent')
+        self.assertEqual(context['events'], [{'type':'finish'}])
         context, _ = story.observe(game, 2., allow_reaction=True)
         self.assertFalse(context['react'])
         context, _ = story.observe(game, 3., allow_reaction=True)
         self.assertFalse(context['react'])
+
+    def test_result_while_idle_requests_one_closing_sentence(self):
+        story = MatchStory()
+        game = race()
+        story.observe(game, 0.)
+        game.state = 'result'
+        context, _ = story.observe(game, 1., allow_reaction=True)
+        self.assertTrue(context['react'])
+        later, _ = story.observe(game, 2., allow_reaction=True)
+        self.assertFalse(later['react'])
+        self.assertEqual(later['events'], [])
 
     def test_restart_clears_old_pace_and_lead_history(self):
         story = MatchStory()
@@ -137,7 +156,7 @@ class MatchStoryTests(unittest.TestCase):
         self.assertNotIn('bites_per_second', context)
         self.assertFalse(context['react'])
 
-    def test_blocked_reaction_preserves_events_until_next_available_speech(self):
+    def test_events_are_sent_once_even_when_voice_is_busy(self):
         story = MatchStory()
         game = race()
         story.observe(game, 0.)
@@ -146,7 +165,10 @@ class MatchStoryTests(unittest.TestCase):
         self.assertFalse(quiet['react'])
         reaction, _ = story.observe(game, 3., allow_reaction=True)
         self.assertTrue(reaction['react'])
-        self.assertIn({'type':'cake_finished','player':2,'count':1}, reaction['events'])
+        self.assertIn({'type':'cake_finished','player':2,'count':1}, quiet['events'])
+        self.assertIsNotNone(quiet['event_id'])
+        self.assertEqual(reaction['events'], [])
+        self.assertIsNone(reaction['event_id'])
 
     def test_sending_interval_is_half_a_second_and_state_changes_are_immediate(self):
         voice = commentator()
@@ -160,7 +182,7 @@ class MatchStoryTests(unittest.TestCase):
         self.assertEqual(voice.pending.get_nowait()['context']['state'], 'paused')
 
 
-    def test_reversal_through_tie_is_immediate_even_during_speech(self):
+    def test_reversal_through_tie_is_immediate_background_during_speech(self):
         voice = commentator()
         game = race()
         voice.update(game, 100.)
@@ -173,7 +195,7 @@ class MatchStoryTests(unittest.TestCase):
         voice.update(game, 100.55)
         latest = voice.pending.get_nowait()['context']
         self.assertEqual(latest['priority'], 'urgent')
-        self.assertTrue(latest['react'])
+        self.assertFalse(latest['react'])
         self.assertEqual(latest['leaders'], [1])
 
     def test_background_is_observed_while_speaking_without_normal_cue(self):
@@ -188,6 +210,21 @@ class MatchStoryTests(unittest.TestCase):
         self.assertEqual(packet['sequence'], 2)
         self.assertEqual(packet['context']['bites'], [8,10])
         self.assertFalse(packet['context']['react'])
+
+    def test_new_event_batches_have_distinct_ids_and_background_is_not_mutated(self):
+        voice = commentator()
+        game = race()
+        voice.update(game, 100.)
+        game.players[1].hits = 12
+        voice.update(game, 100.5)
+        first = voice.debug.snapshot()['current']['context']
+        game.players[1].hits = 16
+        voice.update(game, 101.)
+        second = voice.debug.snapshot()['current']['context']
+        self.assertNotEqual(first['event_id'], second['event_id'])
+        self.assertEqual(second['events'], [{'type':'cake_finished','player':2,'count':1}])
+        self.assertFalse(second['react'])
+        self.assertTrue(voice.pending.get_nowait()['context']['react'])
 
     def test_solo_never_generates_a_leader_reversal(self):
         story = MatchStory()
@@ -212,7 +249,8 @@ class DebugTests(unittest.TestCase):
         self.assertTrue(debug.should_send({'state':'paused','react':False}))
         debug.playback({'type':'speech_started'})
         self.assertFalse(debug.should_send({'state':'playing','react':False}))
-        self.assertTrue(debug.should_send({'state':'playing','react':True,'priority':'urgent'}))
+        self.assertFalse(debug.should_send({'state':'playing','react':True,'priority':'urgent'}))
+        self.assertFalse(debug.should_send({'state':'result','react':True,'priority':'urgent'}))
         self.assertFalse(debug.should_send({'state':'result','react':False}))
         self.assertFalse(debug.can_react())
         debug.playback({'type':'speech_ended'})
