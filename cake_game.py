@@ -1,5 +1,6 @@
 """1人チャレンジ・2人対戦の状態管理と口の開閉判定。映像・描画から独立して検証可能。"""
 from dataclasses import dataclass, field
+from collections import deque
 import math
 
 from statistics import median
@@ -11,11 +12,12 @@ DEFAULT_SENSITIVITY = 7
 
 class MouthCycle:
     """開いて戻す動きを1口とする。高感度は完全な閉口を要求しない。"""
-    def __init__(self, baseline=.025, sensitivity=DEFAULT_SENSITIVITY):
+    def __init__(self, baseline=.025, sensitivity=DEFAULT_SENSITIVITY, noise_span=0.):
         if sensitivity not in range(1, MAX_SENSITIVITY+1):
             raise ValueError(f"sensitivityは1〜{MAX_SENSITIVITY}です")
         self.sensitivity = sensitivity
         self.baseline = baseline
+        self.noise_span = noise_span
         self.reset()
 
     def reset(self):
@@ -23,16 +25,48 @@ class MouthCycle:
         self.opened = False
         self.valley = None
         self.peak = None
+        self.filtered_ratio = None
+        self.samples = deque(maxlen=3)
+
+    @property
+    def movement(self):
+        return max(.07*SENSITIVITY_SCALES[self.sensitivity-1], self.noise_span*2, .012)
+
+    @property
+    def targets(self):
+        if self.sensitivity >= 6:
+            opening = None if self.valley is None else self.valley+self.movement
+            closing = None if self.peak is None else self.peak-self.movement
+            return closing, opening
+        scale = SENSITIVITY_SCALES[self.sensitivity-1]
+        return max(.065*scale, self.baseline+.035*scale), max(.11*scale, self.baseline+.07*scale)
+
+    @property
+    def phase(self):
+        if self.opened:
+            return "戻り待ち"
+        if self.sensitivity >= 6:
+            return "安定化中" if len(self.samples)<3 else "開き待ち"
+        return "開き待ち" if self.armed else "閉じ待ち"
+
+    @classmethod
+    def calibrated(cls, samples, sensitivity):
+        ordered = sorted(samples)
+        low, high = (len(ordered)-1)//10, (len(ordered)-1)*9//10
+        return cls(float(median(ordered)), sensitivity, ordered[high]-ordered[low])
 
     def update(self, ratio):
         if ratio is None or not math.isfinite(ratio):
             self.reset()
             return False
-        scale = SENSITIVITY_SCALES[self.sensitivity-1]
+        self.filtered_ratio = ratio
         if self.sensitivity >= 6:
-            return self._relative_cycle(ratio, .07*scale)
-        close = max(.065*scale, self.baseline + .035*scale)
-        opening = max(.11*scale, self.baseline + .07*scale)
+            self.samples.append(ratio)
+            if len(self.samples)<3:
+                return False
+            self.filtered_ratio = float(median(self.samples))
+            return self._relative_cycle(self.filtered_ratio, self.movement)
+        close, opening = self.targets
         if ratio <= close:
             bite = self.opened
             self.opened = False
@@ -158,7 +192,7 @@ class CakeRace:
                         player.samples.clear()
                     return
                 for player in self.players:
-                    player.mouth = MouthCycle(float(median(player.samples)), self.sensitivity)
+                    player.mouth = MouthCycle.calibrated(player.samples, self.sensitivity)
                 self.state = 'countdown'
                 self.countdown_since = now
             return

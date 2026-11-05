@@ -25,7 +25,7 @@ class MouthTests(unittest.TestCase):
         self.assertEqual(sum(mouth.update(ratio) for now, ratio in sequence), 0)
 
     def test_default_counts_a_gentle_opening_that_old_threshold_rejected(self):
-        sequence = (.025, .07, .025)
+        sequence = (.025, .025, .07, .07, .025, .025)
         easy, old = MouthCycle(), MouthCycle(sensitivity=1)
         self.assertEqual(sum(easy.update(r) for r in sequence), 1)
         self.assertEqual(sum(old.update(r) for r in sequence), 0)
@@ -42,32 +42,43 @@ class MouthTests(unittest.TestCase):
 
     def test_high_sensitivity_counts_without_returning_to_calibrated_closed_position(self):
         gentle, fixed = MouthCycle(.025, 7), MouthCycle(.025, 5)
-        sequence = (.08, .105, .083, .108, .085)
+        sequence = tuple(r for r in (.08, .08, .105, .083, .108, .085) for _ in range(2))
         self.assertEqual(sum(gentle.update(r) for r in sequence), 2)
         self.assertEqual(sum(fixed.update(r) for r in sequence), 0)
 
     def test_high_sensitivity_small_cycles_and_holding_open(self):
         mouth = MouthCycle(sensitivity=7)
-        self.assertEqual(sum(mouth.update(r) for r in (.025,.046,.026,.047,.027)), 2)
+        self.assertEqual(sum(mouth.update(r) for r in tuple(r for r in (.025,.025,.046,.026,.047,.027) for _ in range(2))), 2)
         for ratio in (.027,.03,.028,.031,.029)*10:
             self.assertFalse(mouth.update(ratio))
         mouth = MouthCycle(sensitivity=10)
-        self.assertEqual(sum(mouth.update(r) for r in (.08,.092,.081)), 1)
+        self.assertEqual(sum(mouth.update(r) for r in (.08,.08,.08,.095,.095,.08,.08)), 1)
         for ratio in (.081,.2,.2,.2,.2):
             self.assertFalse(mouth.update(ratio))
 
     def test_high_sensitivity_missing_sample_discards_partial_cycle(self):
         mouth = MouthCycle(sensitivity=7)
         self.assertEqual(sum(mouth.update(r) for r in (.08,.105,None,.08)), 0)
-        self.assertEqual(sum(mouth.update(r) for r in (.105,.08)), 1)
+        self.assertEqual(sum(mouth.update(r) for r in (.08,.08,.105,.105,.08,.08)), 1)
+
+    def test_calibrated_jitter_and_single_frame_spikes_do_not_score(self):
+        samples = [.02,.025,.03]*20
+        mouth = MouthCycle.calibrated(samples, 10)
+        self.assertAlmostEqual(mouth.noise_span, .01)
+        self.assertAlmostEqual(mouth.movement, .02)
+        jitter = [.02,.02,.035,.035,.022,.022]*20
+        self.assertEqual(sum(mouth.update(r) for r in jitter), 0)
+        self.assertEqual(sum(mouth.update(r) for r in (.022,.022,.2,.022,.022)), 0)
+        real_cycle = (.022,.022,.065,.065,.022,.022)
+        self.assertEqual(sum(mouth.update(r) for r in real_cycle), 1)
 
     def test_holding_open_does_not_count(self):
         mouth = MouthCycle()
         for i in range(100):
             self.assertFalse(mouth.update(.4))
 
-    def test_each_detected_cycle_counts_without_time_or_interval_limits(self):
-        mouth = MouthCycle()
+    def test_fixed_threshold_cycle_counts_without_time_or_interval_limits(self):
+        mouth = MouthCycle(sensitivity=1)
         self.assertEqual(sum(mouth.update(ratio) for ratio in (.02, .3, .02, .3, .02)), 2)
 
     def test_lost_landmarks_cancel_partial_bite(self):
@@ -222,7 +233,7 @@ class SoloTests(unittest.TestCase):
     def test_scores_unlimited_cakes_and_finishes_without_winner(self):
         self.start()
         for _ in range(12):
-            for ratio in (.025, .3, .025):
+            for ratio in (.025, .025, .3, .3, .025, .025):
                 self.step(ratio)
         self.assertEqual(self.race.players[0].hits, 12)
         self.assertEqual(self.race.state, 'playing')
