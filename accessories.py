@@ -78,7 +78,16 @@ def composite(frame, sprite, face, opacity=1., name='red', head_offset=0.):
             factor = min(1., max(.05, (anchor[1] - 8) / max(anchor[1] - top, 1.)))
             matrix[:, :2] *= factor
             matrix[:, 2] = anchor - matrix[:, :2] @ np.array([200., 239.])
-    corners = cv2.transform(np.array([[[0., 0.], [400., 0.], [400., 600.], [0., 600.]]]), matrix)[0]
+    # 透明な余白を除いた領域だけを変形・合成する。元の取り付け位置は維持。
+    sx, sy, sw, sh = cv2.boundingRect(sprite[:, :, 3])
+    if sw == 0 or sh == 0:
+        return
+    left, top = max(0, sx-2), max(0, sy-2)
+    right, bottom = min(sprite.shape[1], sx+sw+2), min(sprite.shape[0], sy+sh+2)
+    sprite = sprite[top:bottom, left:right]
+    matrix[:, 2] += matrix[:, :2] @ np.array([left, top])
+    height, width = sprite.shape[:2]
+    corners = cv2.transform(np.array([[[0., 0.], [width, 0.], [width, height], [0., height]]]), matrix)[0]
     low = np.maximum(np.floor(corners.min(axis=0)).astype(int), (0, 0))
     high = np.minimum(np.ceil(corners.max(axis=0)).astype(int), (frame.shape[1], frame.shape[0]))
     w, h = high - low

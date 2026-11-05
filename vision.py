@@ -1,6 +1,18 @@
 """OpenCVによる顔検出と口元の特徴点推定。"""
 import cv2
 import numpy as np
+from statistics import median
+from mouth_motion import MouthMotion
+
+
+def mouth_measurement(points):
+    """横ずれを除いた内唇3組の開度。空間的な中央値で単独点のずれを抑える。"""
+    across = points[54]-points[48]
+    width = float(np.linalg.norm(across))
+    unit = across/max(width,1.)
+    down = np.array([-unit[1],unit[0]])
+    gaps = [float((points[b]-points[a]) @ down) for a,b in ((61,67),(62,66),(63,65))]
+    return width, max(0.,median(gaps))/max(width,1.)
 
 
 class FaceDetector:
@@ -27,10 +39,14 @@ class MouthEstimator:
         self.facemark.loadModel(str(model))
         self.points = {}
         self.errors = {}
+        self.motion = MouthMotion()
+        self.directions = {}
 
     def estimate(self, frame, tracks):
         self.points = {}
         self.errors = {track.number:'特徴点なし' for track in tracks}
+        self.directions = {}
+        self.motion.retain({track.number for track in tracks})
         if not tracks:
             return {}
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -57,7 +73,7 @@ class MouthEstimator:
                 self.errors[track.number] = '特徴点が不安定'
                 continue
             self.points[track.number] = pts
-            mouth_width = np.linalg.norm(pts[48] - pts[54])
+            mouth_width, ratio = mouth_measurement(pts)
             eye_mid = (track.face[4:6] + track.face[6:8]) / 2
             eye_distance = np.linalg.norm(track.face[4:6] - track.face[6:8])
             # 横顔や大きく崩れた推定では、誤って食べ進めない。
@@ -67,9 +83,8 @@ class MouthEstimator:
             if abs(track.face[8] - eye_mid[0]) > eye_distance * .65:
                 self.errors[track.number] = '横向き'
                 continue
-            opening = sum(np.linalg.norm(pts[a] - pts[b]) for a, b in ((61, 67), (62, 66), (63, 65))) / 3
-            ratio = float(opening / max(mouth_width, 1.))
             if 0 <= ratio <= 1.2:
+                self.directions[track.number] = self.motion.measure(gray,pts,track.number)
                 ratios[track.number] = ratio
                 self.errors.pop(track.number, None)
         return ratios

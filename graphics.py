@@ -47,7 +47,7 @@ def panel(frame, rect, color=(38, 25, 24), opacity=.85):
     x1, y1, x2, y2 = map(int, rect)
     roi = frame[max(0, y1):min(frame.shape[0], y2), max(0, x1):min(frame.shape[1], x2)]
     if roi.size:
-        roi[:] = (roi*(1-opacity)+np.array(color)*opacity).astype(np.uint8)
+        cv2.addWeighted(roi, 1-opacity, np.full_like(roi, color), opacity, 0, dst=roi)
 
 
 
@@ -96,7 +96,7 @@ def _tint_mask(frame, mask, x, y, color):
         return
     alpha = mask[top-y:bottom-y, left-x:right-x, None].astype(np.float32)/255
     target = frame[top:bottom, left:right]
-    target[:] = (target*(1-alpha)+np.asarray(color)*alpha).astype(np.uint8)
+    target[:] = (target*(1-alpha)+np.asarray(color, dtype=np.float32)*alpha).astype(np.uint8)
 
 
 def text(frame, label, center, size=1., color=(255, 255, 255), thickness=2):
