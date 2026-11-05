@@ -8,7 +8,7 @@ import cv2
 from accessories import make_sprites, render, Snow
 from tracking import Tracker, LOOKS
 from vision import FaceDetector, MouthEstimator
-from cake_game import CakeRace
+from cake_game import CakeRace, DEFAULT_SENSITIVITY, MAX_SENSITIVITY
 from game_visuals import GameVisuals
 from graphics import text
 from diagnostics import draw_guides, write_preview
@@ -39,7 +39,7 @@ def main():
     parser.add_argument('--mirror-only', action='store_true', help='ゲームを自動開始しない')
     parser.add_argument('--min-face', type=int, default=160, help='ゲーム開始に必要な顔幅（既定: 160px）')
     parser.add_argument('--time-limit', type=float, default=30., help='制限時間（秒、既定: 30）')
-    parser.add_argument('--mouth-sensitivity', type=int, choices=range(1, 6), default=4, help='口の感度（1〜5、大きいほど小さな開閉で反応。既定: 4）')
+    parser.add_argument('--mouth-sensitivity', type=int, choices=range(1, MAX_SENSITIVITY+1), default=DEFAULT_SENSITIVITY, help=f'口の感度（1〜{MAX_SENSITIVITY}、大きいほど小さな開閉で反応。既定: {DEFAULT_SENSITIVITY}）')
     parser.add_argument('--mouth-debug', action='store_true', help='口の特徴点と開き具合を表示')
     parser.add_argument('--head-offset', type=float, default=0., help='頭の飾りの上下位置（顔幅に対する比率、正で下）')
     parser.add_argument('--preview-file', type=Path, help='確認用の投影画像を0.5秒ごとにローカル保存（任意）')
@@ -141,10 +141,10 @@ def main():
                 race.set_player_count(2 if race.player_count == 1 else 1)
                 game_enabled = True
             elif key in (ord('+'), ord('='), ord('-')):
-                level = max(1, min(5, race.sensitivity + (-1 if key == ord('-') else 1)))
+                level = max(1, min(MAX_SENSITIVITY, race.sensitivity + (-1 if key == ord('-') else 1)))
                 if level != race.sensitivity:
                     race.set_sensitivity(level)
-                    print(f'口の感度: {level}/5', flush=True)
+                    print(f'口の感度: {level}/{MAX_SENSITIVITY}', flush=True)
             elif ord('1') <= key <= ord('6'):
                 tracker.choose(LOOKS[key - ord('1')])
             elif key in (0xF700, 2490368, 65362):

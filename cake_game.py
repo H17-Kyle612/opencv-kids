@@ -4,12 +4,16 @@ import math
 
 from statistics import median
 
+SENSITIVITY_SCALES = (1., .85, .7, .55, .4, .32, .26, .21, .17, .14)
+MAX_SENSITIVITY = len(SENSITIVITY_SCALES)
+DEFAULT_SENSITIVITY = 7
+
 
 class MouthCycle:
-    """閉→開→閉を1口とする。継続時間・加点間隔の制限は設けない。"""
-    def __init__(self, baseline=.025, sensitivity=4):
-        if sensitivity not in range(1, 6):
-            raise ValueError("sensitivityは1〜5です")
+    """開いて戻す動きを1口とする。高感度は完全な閉口を要求しない。"""
+    def __init__(self, baseline=.025, sensitivity=DEFAULT_SENSITIVITY):
+        if sensitivity not in range(1, MAX_SENSITIVITY+1):
+            raise ValueError(f"sensitivityは1〜{MAX_SENSITIVITY}です")
         self.sensitivity = sensitivity
         self.baseline = baseline
         self.reset()
@@ -17,12 +21,16 @@ class MouthCycle:
     def reset(self):
         self.armed = False
         self.opened = False
+        self.valley = None
+        self.peak = None
 
     def update(self, ratio):
         if ratio is None or not math.isfinite(ratio):
             self.reset()
             return False
-        scale = (1., .85, .7, .55, .4)[self.sensitivity-1]
+        scale = SENSITIVITY_SCALES[self.sensitivity-1]
+        if self.sensitivity >= 6:
+            return self._relative_cycle(ratio, .07*scale)
         close = max(.065*scale, self.baseline + .035*scale)
         opening = max(.11*scale, self.baseline + .07*scale)
         if ratio <= close:
@@ -33,6 +41,23 @@ class MouthCycle:
         if ratio >= opening and self.armed:
             self.opened = True
             self.armed = False
+        return False
+
+    def _relative_cycle(self, ratio, movement):
+        # 高感度では閉じ位置の絶対値に依存せず、開いて戻る振れ幅を見る。
+        # 振れ幅未満の揺れと、開けっぱなしは加点しない。
+        if not self.opened:
+            self.valley = ratio if self.valley is None else min(self.valley, ratio)
+            if ratio-self.valley >= movement:
+                self.opened = True
+                self.peak = ratio
+        else:
+            self.peak = max(self.peak, ratio)
+            if self.peak-ratio >= movement:
+                self.opened = False
+                self.valley = ratio
+                self.peak = None
+                return True
         return False
 
 
@@ -48,7 +73,7 @@ class Player:
 class CakeRace:
     bites_per_cake = 4
 
-    def __init__(self, min_face=160, time_limit=30., player_count=2, sensitivity=4):
+    def __init__(self, min_face=160, time_limit=30., player_count=2, sensitivity=DEFAULT_SENSITIVITY):
         if min_face < 40 or not math.isfinite(time_limit) or time_limit <= 0:
             raise ValueError('min_face>=40、time_limit>0 が必要です')
         self.min_face = min_face
@@ -57,8 +82,8 @@ class CakeRace:
         self.set_sensitivity(sensitivity)
 
     def set_sensitivity(self, sensitivity):
-        if sensitivity not in range(1, 6):
-            raise ValueError("sensitivityは1〜5です")
+        if sensitivity not in range(1, MAX_SENSITIVITY+1):
+            raise ValueError(f"sensitivityは1〜{MAX_SENSITIVITY}です")
         self.sensitivity = sensitivity
         for player in self.players:
             player.mouth.sensitivity = sensitivity
