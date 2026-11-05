@@ -192,7 +192,7 @@ python christmas_camera.py --preview-file outputs/live_preview.jpg --mouth-debug
   [OpenCVの使い方](https://docs.opencv.org/3.4.12/d7/dec/tutorial_facemark_usage.html)。
   取得後にSHA-256 `70dd8b1657c42d1595d6bd13d97d932877b3bed54a95d3c4733a0f740d1fd66b` を照合します。
 
-LBFの内側の唇3組の平均距離を口幅で割り、閉じた状態からの変化を判定しています。
+LBFの内側の唇3組について、口の向きに沿った上下の差を取り、その中央値を口幅で割っています。横ずれや1組だけの推定ずれを抑え、時間方向の平滑化は行いません。
 実行時はモデル・素材をローカルから読み込むため、インターネット接続は不要です。
 
 ## 実装の分担
