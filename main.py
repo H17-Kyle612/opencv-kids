@@ -32,7 +32,7 @@ def main():
     parser.add_argument('--camera', type=int, default=0, help='カメラ番号（既定: 0）')
     parser.add_argument('--detect-width', type=int, default=960, help='顔検出の最大幅（既定: 960、0で入力を縮小しない）')
     parser.add_argument('--threshold', type=float, default=.75, help='顔検出のしきい値（既定: 0.75）')
-    parser.add_argument('--fullscreen', action='store_true')
+    parser.add_argument('--fullscreen', action=argparse.BooleanOptionalAction, default=True, help='全画面で起動（既定）。--no-fullscreenでウィンドウ表示')
     parser.add_argument('--no-sound', action='store_true', help='効果音を再生しない')
     parser.add_argument('--players', type=int, choices=(1, 2), default=2, help='1: 1人チャレンジ、2: 2人対戦（既定）')
     parser.add_argument('--mirror-only', action='store_true', help='ゲームを自動開始しない')
