@@ -2,6 +2,7 @@
 import cv2
 import numpy as np
 from statistics import median
+from mouth_motion import MouthMotion
 
 
 def mouth_measurement(points):
@@ -38,10 +39,14 @@ class MouthEstimator:
         self.facemark.loadModel(str(model))
         self.points = {}
         self.errors = {}
+        self.motion = MouthMotion()
+        self.directions = {}
 
     def estimate(self, frame, tracks):
         self.points = {}
         self.errors = {track.number:'特徴点なし' for track in tracks}
+        self.directions = {}
+        self.motion.retain({track.number for track in tracks})
         if not tracks:
             return {}
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -79,6 +84,7 @@ class MouthEstimator:
                 self.errors[track.number] = '横向き'
                 continue
             if 0 <= ratio <= 1.2:
+                self.directions[track.number] = self.motion.measure(gray,pts,track.number)
                 ratios[track.number] = ratio
                 self.errors.pop(track.number, None)
         return ratios
