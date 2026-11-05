@@ -98,7 +98,6 @@ class MatchStory:
         urgent = (context['state'] == 'playing' and reversal and now-self.last_urgent >= .5) or (context['state'] == 'result' and react)
         if reversal and not any(e['type'] == 'lead_change' for e in events):
             events.append({'type':'lead_change', 'leaders':context['leaders']})
-        finish = context['state'] == 'result' and react
         react = (react or urgent) and allow_reaction
         if urgent:
             self.last_urgent = now
@@ -108,8 +107,8 @@ class MatchStory:
         context['event_id'] = f'{self.match}:{self.event_sequence}' if events else None
         context['events'] = events
         context['react'] = react
-        # 発話中の終了は背景で伝える。後から同じ終了を発話指示で再送しない。
-        if react or finish:
+        # 発話中の終了は保留し、無言になった時点で一度だけ送る。
+        if react:
             self.announced = context.copy()
         if react:
             self.last_reaction = now

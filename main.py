@@ -124,6 +124,7 @@ def main():
             draw_guides(display, visible, estimator.points if (debug or args.mouth_debug) and game_enabled else {}, ratios, guides or debug, labels=not debug)
             if debug:
                 draw_debug(display, race, ratios, estimator.errors, fps, camera_fps, face_ms, mouth_ms, args.detect_width)
+
             if hud and not game_enabled:
                 # 頭上の星や帽子を隠さないよう、操作説明は画面下に置く。
                 bottom = display.shape[0]

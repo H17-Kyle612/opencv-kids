@@ -12,7 +12,6 @@ def timestamp():
 class CommentaryDebug:
     def __init__(self):
         self.lock = threading.Lock()
-        self.context_changed = threading.Condition(self.lock)
         self.context_sequence = 0
         self.sent = deque(maxlen=30)
         self.audio = deque(maxlen=20)
@@ -24,36 +23,9 @@ class CommentaryDebug:
         self.last_end = -float('inf')
 
     def observe(self, context):
-        with self.context_changed:
+        with self.lock:
             self.context_sequence += 1
             self.current = {'sequence':self.context_sequence, 'at':timestamp(), 'context':context}
-            self.context_changed.notify_all()
-
-    def context_after(self, sequence, timeout=1.):
-        with self.context_changed:
-            self.context_changed.wait_for(lambda: self.context_sequence != sequence, timeout)
-            return self.current
-
-    def background_sent(self, report):
-        # ブラウザで実際に送った背景情報を、音声指示とは別の経路として記録する。
-        if not isinstance(report, dict) or not isinstance(report.get('payload'), dict):
-            return
-        payload = report['payload']
-        if payload.get('type') != 'session.context.append' or payload.get('channel') != 'commentary':
-            return
-        try:
-            context = report['context']
-            captured = report['captured_at']
-            sent = report['sent_at']
-            delay = max(0., (datetime.fromisoformat(sent)-datetime.fromisoformat(captured)).total_seconds()*1000)
-        except (KeyError, TypeError, ValueError):
-            return
-        with self.lock:
-            self.sequence += 1
-            self.sent.append({'sequence':self.sequence, 'captured_at':captured, 'sent_at':sent,
-                              'queue_ms':round(delay, 1), 'context':context, 'transport':'webrtc_background',
-                              'request':{'method':'session.context.append','params':payload},
-                              'status':'WebRTC送信済み（個別の受理対応は未確認）'})
 
     def sending(self, packet, params):
         now = time.monotonic()
@@ -74,10 +46,6 @@ class CommentaryDebug:
             entry['status'] = str(error) if error else 'App Server受付済み'
 
     def playback(self, event):
-        reports = event.get('background_sent', [])
-        if isinstance(reports, list):
-            for report in reports[-8:]:
-                self.background_sent(report)
         with self.lock:
             kind = event.get('type')
             if kind in ('audio_waiting', 'audio_stalled', 'audio_playing', 'speech_gap',
@@ -100,8 +68,7 @@ class CommentaryDebug:
                     (self.reaction_at is None or now-self.reaction_at >= 6.))
 
     def should_send(self, context):
-        # 背景はWebRTCで常時更新。RPCでは発話の合図と明示的な停止だけを送る。
-        return context['state'] in ('waiting', 'ready', 'countdown', 'paused') or (bool(context.get('react')) and self.can_react())
+        return self.can_react() and (bool(context.get('react')) or context['state'] in ('waiting', 'ready', 'countdown', 'paused'))
 
     def reset_voice(self):
         with self.lock:

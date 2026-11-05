@@ -87,24 +87,6 @@ class Commentator:
                     self.respond((ROOT/'voice_player.html').read_bytes(), content_type='text/html; charset=utf-8')
                 elif path == 'font.ttf':
                     self.respond((ROOT/'assets/fonts/BIZUDPGothic-Bold.ttf').read_bytes(), content_type='font/ttf')
-                elif path == 'context-events':
-                    self.send_response(200)
-                    self.send_header('Content-Type','text/event-stream; charset=utf-8')
-                    self.send_header('Cache-Control','no-store')
-                    self.end_headers()
-                    sequence = 0
-                    try:
-                        while not owner.stopped.is_set():
-                            packet = owner.debug.context_after(sequence)
-                            if packet and packet['sequence'] != sequence:
-                                sequence = packet['sequence']
-                                wire = 'data: '+json.dumps(packet, ensure_ascii=False)+'\n\n'
-                            else:
-                                wire = ': keepalive\n\n'
-                            self.wfile.write(wire.encode())
-                            self.wfile.flush()
-                    except (BrokenPipeError, ConnectionResetError):
-                        pass
                 elif path == 'state':
                     self.respond({'transcript':owner.transcript, 'error':owner.error,
                                   'debug':owner.debug.snapshot(), 'active_settings':owner.active_settings})
@@ -122,8 +104,6 @@ class Commentator:
                         self.respond({'error':'声の一覧を取得できませんでした'}, 503)
                 elif path == 'activity.js':
                     self.respond((ROOT/'voice_activity.js').read_bytes(), content_type='text/javascript; charset=utf-8')
-                elif path == 'context.js':
-                    self.respond((ROOT/'voice_context.js').read_bytes(), content_type='text/javascript; charset=utf-8')
                 elif path == 'player.js':
                     self.respond((ROOT/'voice_player.js').read_bytes(), content_type='text/javascript; charset=utf-8')
                 else:
@@ -202,9 +182,7 @@ class Commentator:
                                 client = CodexClient(on_process=lambda p: setattr(self, 'server_process', p))
                             chosen = self.settings.snapshot()
                             self.settings.validate(chosen['prompt'], chosen['voice'], self.voices or None)
-                            current = self.debug.snapshot()['current']
-                            answer = client.start_voice(offer, prompt=chosen['prompt'], voice=chosen['voice'],
-                                                        initial_context=current['context'] if current else None)
+                            answer = client.start_voice(offer, prompt=chosen['prompt'], voice=chosen['voice'])
                             self.active_settings = chosen
                             self.status = '音声接続待ち'
                             reply.put({'sdp':answer})
@@ -217,9 +195,8 @@ class Commentator:
                                 client = None
                 if client:
                     try:
-                        control = self.previous_state in ('waiting', 'ready', 'countdown', 'paused')
-                        # 発話中は合図を差し込まない。背景は独立したWebRTC経路で更新する。
-                        if self.ready.is_set() and (control or self.debug.can_react()):
+                        # 発話中は全ての状況送信を止め、ローカルで最新1件に更新する。
+                        if self.ready.is_set() and self.debug.can_react():
                             try:
                                 context = self.pending.get_nowait()
                             except queue.Empty:

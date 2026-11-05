@@ -1,5 +1,6 @@
 from collections import deque
 import queue
+import json
 import unittest
 from unittest.mock import Mock
 from codex_client import CodexClient
@@ -71,12 +72,10 @@ class CommentaryTests(unittest.TestCase):
         voice.update(race('paused'), 100.2)
         self.assertEqual(voice.pending.get_nowait()['context']['state'], 'paused')
 
-    def test_speech_cue_does_not_repeat_background_events_or_scores(self):
+    def test_sent_json_contains_latest_scores_without_a_second_background_route(self):
         context, _ = MatchStory().observe(race(), 100.)
         params = CodexClient.context_params('thread', context)
-        self.assertNotIn('"events":', params['text'])
-        self.assertNotIn('"bites":', params['text'])
-        self.assertIn('未実況の展開だけ', params['text'])
+        self.assertEqual(json.loads(params['text']), context)
 
     def test_disabled_game_sends_waiting_without_winner(self):
         self.assertEqual(game_context(race('result'), False)['state'], 'waiting')
@@ -117,9 +116,10 @@ class MatchStoryTests(unittest.TestCase):
         self.assertFalse(context['react'])
         client = CodexClient.__new__(CodexClient)
         params = client.context_params('thread', context)
-        self.assertIn('新しい発話は増やさない', params['text'])
+        self.assertFalse(CommentaryDebug().should_send(context))
+        self.assertEqual(json.loads(params['text']), context)
 
-    def test_result_is_background_while_busy_and_does_not_replay_when_idle(self):
+    def test_result_waits_until_idle_then_requests_one_closing_sentence(self):
         story = MatchStory()
         game = race()
         story.observe(game, 0.)
@@ -129,7 +129,7 @@ class MatchStoryTests(unittest.TestCase):
         self.assertEqual(context['priority'], 'urgent')
         self.assertEqual(context['events'], [{'type':'finish'}])
         context, _ = story.observe(game, 2., allow_reaction=True)
-        self.assertFalse(context['react'])
+        self.assertTrue(context['react'])
         context, _ = story.observe(game, 3., allow_reaction=True)
         self.assertFalse(context['react'])
 
@@ -206,7 +206,7 @@ class MatchStoryTests(unittest.TestCase):
         voice.debug.playback({'type':'speech_started'})
         game.players[1].hits += 1
         voice.update(game, 100.5)
-        packet = voice.debug.context_after(1, timeout=0)
+        packet = voice.debug.snapshot()['current']
         self.assertEqual(packet['sequence'], 2)
         self.assertEqual(packet['context']['bites'], [8,10])
         self.assertFalse(packet['context']['react'])
@@ -246,7 +246,7 @@ class DebugTests(unittest.TestCase):
         debug.sending({'context':context,'at':'capture','monotonic':time.monotonic()}, {})
         self.assertFalse(debug.can_react())
         self.assertFalse(debug.should_send({'state':'playing','react':False}))
-        self.assertTrue(debug.should_send({'state':'paused','react':False}))
+        self.assertFalse(debug.should_send({'state':'paused','react':False}))
         debug.playback({'type':'speech_started'})
         self.assertFalse(debug.should_send({'state':'playing','react':False}))
         self.assertFalse(debug.should_send({'state':'playing','react':True,'priority':'urgent'}))
@@ -268,6 +268,15 @@ class DebugTests(unittest.TestCase):
         self.assertFalse(debug.can_react())
         debug.playback({'type':'audio_track_muted'})
         self.assertEqual(debug.snapshot()['audio'][-1]['type'], 'audio_track_muted')
+
+    def test_all_updates_are_blocked_during_speech_including_results_and_pause(self):
+        debug = CommentaryDebug()
+        debug.playback({'type':'speech_started'})
+        for state in ('playing','result','waiting','paused','ready','countdown'):
+            self.assertFalse(debug.should_send({'state':state,'react':True,'priority':'urgent'}))
+        debug.playback({'type':'speech_ended'})
+        debug.last_end -= 1.
+        self.assertTrue(debug.should_send({'state':'result','react':True}))
 
     def test_debug_records_exact_sent_payload_and_bounds_history(self):
         debug = CommentaryDebug()
@@ -334,11 +343,12 @@ class AppServerVoiceTests(unittest.TestCase):
 
     def test_browser_prompt_and_selected_voice_are_passed_to_app_server(self):
         client = self.client({'method':'thread/realtime/sdp','params':{'sdp':'answer'}})
-        client.start_voice('offer',prompt='ケーキにちなんだ洒落を交えて実況。',voice='miko',initial_context={'state':'playing','bites':[12]})
+        client.start_voice('offer',prompt='ケーキにちなんだ洒落を交えて実況。',voice='miko')
         params = client.rpc.call_args.args[1]
         self.assertEqual(params['prompt'],'ケーキにちなんだ洒落を交えて実況。')
         self.assertEqual(params['voice'],'miko')
-        self.assertIn('playing', params['initialItems'][0]['text'])
+        self.assertNotIn('bites', params['initialItems'][0]['text'])
+        self.assertIn('無言', params['initialItems'][0]['text'])
         self.assertNotIn('model', params)
 
     def test_voice_error_is_reported_without_model_fallback(self):
