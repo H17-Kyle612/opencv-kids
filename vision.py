@@ -4,7 +4,7 @@ import numpy as np
 
 
 class FaceDetector:
-    def __init__(self, model, max_width=960, threshold=.75):
+    def __init__(self, model, max_width=640, threshold=.75):
         self.max_width = max_width
         self.detector = cv2.FaceDetectorYN.create(str(model), '', (320, 320), threshold, .3, 5000)
 
@@ -26,9 +26,11 @@ class MouthEstimator:
         self.facemark = cv2.face.createFacemarkLBF()
         self.facemark.loadModel(str(model))
         self.points = {}
+        self.errors = {}
 
     def estimate(self, frame, tracks):
         self.points = {}
+        self.errors = {track.number:'特徴点なし' for track in tracks}
         if not tracks:
             return {}
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -52,19 +54,23 @@ class MouthEstimator:
         for track, landmark in zip(selected, landmarks):
             pts = np.asarray(landmark).reshape(-1, 2)
             if pts.shape != (68, 2) or not np.isfinite(pts).all():
+                self.errors[track.number] = '特徴点が不安定'
                 continue
+            self.points[track.number] = pts
             mouth_width = np.linalg.norm(pts[48] - pts[54])
             eye_mid = (track.face[4:6] + track.face[6:8]) / 2
             eye_distance = np.linalg.norm(track.face[4:6] - track.face[6:8])
             # 横顔や大きく崩れた推定では、誤って食べ進めない。
             if not .15 * track.face[2] <= mouth_width <= .8 * track.face[2]:
+                self.errors[track.number] = '口幅が不安定'
                 continue
             if abs(track.face[8] - eye_mid[0]) > eye_distance * .65:
+                self.errors[track.number] = '横向き'
                 continue
             opening = sum(np.linalg.norm(pts[a] - pts[b]) for a, b in ((61, 67), (62, 66), (63, 65))) / 3
             ratio = float(opening / max(mouth_width, 1.))
             if 0 <= ratio <= 1.2:
                 ratios[track.number] = ratio
-                self.points[track.number] = pts
+                self.errors.pop(track.number, None)
         return ratios
 
