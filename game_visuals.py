@@ -56,12 +56,13 @@ class GameVisuals:
             self.burst((w*self.rng.uniform(.15, .85), h*.25), GOLD, now, True)
         self.seen_state = race.state
         statuses = {'waiting':'顔を映してね', 'ready':'準備！　口を閉じて待ってね',
-                    'playing':'プレイ中', 'paused':'一時停止', 'result':'終了！'}
+                    'playing':'', 'paused':'一時停止', 'result':'終了！'}
         status = race.countdown(now) if race.state == 'countdown' else statuses[race.state]
         if race.state == 'result' and not solo:
             status = '引き分け！' if len(race.winners) == 2 else f'プレイヤー{race.winners[0]+1}の勝ち！'
         panel(frame, (0, 0, w, 72*unit))
-        text(frame, status, (w*.28, 33*unit), .65*unit, GOLD)
+        if status:
+            text(frame, status, (w*.28, 33*unit), .65*unit, GOLD)
         text(frame, f'残り {max(0., race.time_limit-race.elapsed):04.1f}秒', (w*.77, 33*unit), .7*unit)
         panel(frame, (0, h*.69, w, h), opacity=.75)
         if not solo:
@@ -81,7 +82,9 @@ class GameVisuals:
             sprite = self.cakes[stage]
             if 0 <= age < .18 and hits and stage == 0:
                 sprite = self.cakes[4]
-            blit(frame, sprite, (x, y), w*.19*scale, h*.19*scale, angle)
+            # 画像は専用領域で切り抜き、拡大・回転中も個数の文字に重ねない。
+            cake_area = frame[int(h*.765):int(h*.95)]
+            blit(cake_area, sprite, (x, cake_area.shape[0]/2), w*.19*scale, cake_area.shape[0]*.8*scale, angle)
             text(frame, f'{"あなた" if solo else f"プレイヤー{i+1}"}　{eaten}個', (x, h*.725), .65*unit, COLORS[i])
             # 4口ずつの進捗が見える大きな丸。
             for dot in range(race.bites_per_cake):
