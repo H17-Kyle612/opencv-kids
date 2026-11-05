@@ -1,6 +1,5 @@
 """1人チャレンジ・2人対戦の状態管理と口の開閉判定。映像・描画から独立して検証可能。"""
 from dataclasses import dataclass, field
-from collections import deque
 import math
 
 from statistics import median
@@ -26,7 +25,6 @@ class MouthCycle:
         self.valley = None
         self.peak = None
         self.filtered_ratio = None
-        self.samples = deque(maxlen=3)
 
     @property
     def movement(self):
@@ -46,7 +44,7 @@ class MouthCycle:
         if self.opened:
             return "戻り待ち"
         if self.sensitivity >= 6:
-            return "安定化中" if len(self.samples)<3 else "開き待ち"
+            return "測定待ち" if self.valley is None else "開き待ち"
         return "開き待ち" if self.armed else "閉じ待ち"
 
     @classmethod
@@ -61,11 +59,7 @@ class MouthCycle:
             return False
         self.filtered_ratio = ratio
         if self.sensitivity >= 6:
-            self.samples.append(ratio)
-            if len(self.samples)<3:
-                return False
-            self.filtered_ratio = float(median(self.samples))
-            return self._relative_cycle(self.filtered_ratio, self.movement)
+            return self._relative_cycle(ratio, self.movement)
         close, opening = self.targets
         if ratio <= close:
             bite = self.opened
@@ -185,14 +179,18 @@ class CakeRace:
                 player.samples.append(ratio)
                 player.samples = player.samples[-90:]
             if now - self.ready_since >= 1.5:
-                # 開いた口を閉じた基準として学習させない。
-                if any(median(p.samples) > .14 for p in self.players):
+                calibrated = [MouthCycle.calibrated(p.samples, self.sensitivity) for p in self.players]
+                # 口の動きや推定崩れを、大きなノイズとして学習したまま開始しない。
+                if any(m.baseline>.14 or m.noise_span>.05 for m in calibrated):
+                    self.reason = '準備：口を閉じて安定させてね'
                     self.ready_since = now
-                    for player in self.players:
+                    for player, mouth in zip(self.players, calibrated):
+                        player.mouth = mouth
                         player.samples.clear()
                     return
-                for player in self.players:
-                    player.mouth = MouthCycle.calibrated(player.samples, self.sensitivity)
+                for player, mouth in zip(self.players, calibrated):
+                    player.mouth = mouth
+                self.reason = ''
                 self.state = 'countdown'
                 self.countdown_since = now
             return

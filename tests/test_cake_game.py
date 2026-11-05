@@ -61,16 +61,19 @@ class MouthTests(unittest.TestCase):
         self.assertEqual(sum(mouth.update(r) for r in (.08,.105,None,.08)), 0)
         self.assertEqual(sum(mouth.update(r) for r in (.08,.08,.105,.105,.08,.08)), 1)
 
-    def test_calibrated_jitter_and_single_frame_spikes_do_not_score(self):
+    def test_calibrated_jitter_does_not_score_but_real_cycles_do(self):
         samples = [.02,.025,.03]*20
         mouth = MouthCycle.calibrated(samples, 10)
         self.assertAlmostEqual(mouth.noise_span, .01)
         self.assertAlmostEqual(mouth.movement, .02)
-        jitter = [.02,.02,.035,.035,.022,.022]*20
+        jitter = [.02,.02,.03,.03,.022,.022]*20
         self.assertEqual(sum(mouth.update(r) for r in jitter), 0)
-        self.assertEqual(sum(mouth.update(r) for r in (.022,.022,.2,.022,.022)), 0)
         real_cycle = (.022,.022,.065,.065,.022,.022)
         self.assertEqual(sum(mouth.update(r) for r in real_cycle), 1)
+
+    def test_single_frame_opening_and_return_are_counted_without_smoothing_delay(self):
+        mouth = MouthCycle(sensitivity=8, noise_span=.035)
+        self.assertEqual(sum(mouth.update(r) for r in (.025,.12,.025,.12,.025)), 2)
 
     def test_holding_open_does_not_count(self):
         mouth = MouthCycle()
@@ -124,6 +127,16 @@ class RaceTests(unittest.TestCase):
     def bite(self, both=False):
         for ratio in (.025, .025, .3, .3, .025, .025):
             self.step({1: ratio, 2: ratio if both else .025})
+
+    def test_unstable_calibration_does_not_start_with_an_unreachable_threshold(self):
+        for index in range(20):
+            self.step({1:.35 if index%5==4 else .025,2:.025})
+        self.assertEqual(self.race.state, 'ready')
+        self.assertIn('安定', self.race.reason)
+        for _ in range(60):
+            self.step()
+        self.assertEqual(self.race.state, 'playing')
+        self.assertLess(self.race.players[0].mouth.movement, .1)
 
     def test_two_large_faces_on_opposite_sides_are_required(self):
         for _ in range(30):

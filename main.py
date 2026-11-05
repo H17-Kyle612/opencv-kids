@@ -8,10 +8,11 @@ import cv2
 from accessories import make_sprites, render, Snow
 from tracking import Tracker, LOOKS
 from vision import FaceDetector, MouthEstimator
+from camera import LatestCamera
 from cake_game import CakeRace, DEFAULT_SENSITIVITY, MAX_SENSITIVITY
 from game_visuals import GameVisuals
 from graphics import text
-from diagnostics import draw_guides, draw_debug, write_preview
+from diagnostics import draw_guides, draw_debug, write_preview, MouthTrace
 from audio import SoundEffects
 
 ROOT = Path(__file__).resolve().parent
@@ -30,7 +31,7 @@ def save(frame, prefix='christmas'):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--camera', type=int, default=0, help='カメラ番号（既定: 0）')
-    parser.add_argument('--camera-fps', type=int, default=60, help='カメラへ要求するFPS（対応範囲内で設定、既定: 60）')
+    parser.add_argument('--camera-fps', type=int, default=30, help='カメラへ要求するFPS（対応範囲内で設定、既定: 30）')
     parser.add_argument('--detect-width', type=int, default=640, help='顔検出の最大幅（既定: 640、0で入力を縮小しない）')
     parser.add_argument('--threshold', type=float, default=.75, help='顔検出のしきい値（既定: 0.75）')
     parser.add_argument('--fullscreen', action=argparse.BooleanOptionalAction, default=True, help='全画面で起動（既定）。--no-fullscreenでウィンドウ表示')
@@ -42,6 +43,7 @@ def main():
     parser.add_argument('--mouth-sensitivity', type=int, choices=range(1, MAX_SENSITIVITY+1), default=DEFAULT_SENSITIVITY, help=f'口の感度（1〜{MAX_SENSITIVITY}、大きいほど小さな開閉で反応。既定: {DEFAULT_SENSITIVITY}）')
     parser.add_argument('--mouth-debug', action='store_true', help='口の特徴点と開き具合を表示')
     parser.add_argument('--head-offset', type=float, default=0., help='頭の飾りの上下位置（顔幅に対する比率、正で下）')
+    parser.add_argument('--mouth-trace', type=Path, help='計測用の開度と処理時間をCSVに記録')
     parser.add_argument('--preview-file', type=Path, help='確認用の投影画像を0.5秒ごとにローカル保存（任意）')
     args = parser.parse_args()
     if not math.isfinite(args.head_offset) or not -.5 <= args.head_offset <= .5:
@@ -68,9 +70,12 @@ def main():
     game_enabled = not args.mirror_only
     last_game_state = None
     cap = cv2.VideoCapture(args.camera)
+    camera = None
     tracker, snow = Tracker(), Snow()
     fullscreen, hud, guides = args.fullscreen, True, False
     debug, face_ms, mouth_ms = False, 0., 0.
+    capture_ms, render_ms, display_ms = 0., 0., 0.
+    trace = MouthTrace(args.mouth_trace) if args.mouth_trace else None
     head_offset, last_preview = args.head_offset, 0.
     try:
         if not cap.isOpened():
@@ -79,6 +84,8 @@ def main():
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         cap.set(cv2.CAP_PROP_FPS, args.camera_fps)
         camera_fps = cap.get(cv2.CAP_PROP_FPS)
+        print(f'カメラ設定: {cap.get(cv2.CAP_PROP_FRAME_WIDTH):.0f}x{cap.get(cv2.CAP_PROP_FRAME_HEIGHT):.0f} / {camera_fps:.1f} FPS', flush=True)
+        camera = LatestCamera(cap)
         cv2.namedWindow(WINDOW, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(WINDOW, 1280, 720)
         if fullscreen:
@@ -87,7 +94,10 @@ def main():
         fps = 0.
         print('M: 1人／2人切替 | G: ゲーム切替 | R: 再試合 | SPACE: シャッフル | 1-6: 素材確認 | +/-: 口の感度 | ↑↓: 頭の飾り位置 | @: 詳細デバッグ | D: 位置ガイド | S: 保存 | F: 全画面 | H: 説明 | Q/ESC: 終了', flush=True)
         while True:
-            ok, frame = cap.read()
+            started = time.perf_counter()
+            ok, frame = camera.read()
+            camera_fps = camera.fps
+            capture_ms = (time.perf_counter()-started)*1000
             if not ok or frame is None:
                 raise RuntimeError('カメラ映像を取得できません。接続や他アプリのカメラ使用を確認してください。')
             frame = cv2.flip(frame, 1)
@@ -110,13 +120,15 @@ def main():
                     print(f'GAME {race.state} | bites={[p.hits for p in race.players]} | time={race.elapsed:.2f}', flush=True)
                     last_game_state = race.state
             sounds.update(race, now, active=game_enabled)
+            started = time.perf_counter()
             snow.draw(frame, dt, now)
             render(frame, visible, sprites, now, head_offset)
             visuals.draw(frame, race, visible, ratios, now, game_enabled)
+            render_ms = (time.perf_counter()-started)*1000
             display = frame.copy() if debug or guides or args.mouth_debug or (hud and not game_enabled) else frame
             draw_guides(display, visible, estimator.points if (debug or args.mouth_debug) and game_enabled else {}, ratios, guides or debug, labels=not debug)
             if debug:
-                draw_debug(display, race, ratios, estimator.errors, fps, camera_fps, face_ms, mouth_ms, args.detect_width)
+                draw_debug(display, race, ratios, estimator.errors, fps, camera_fps, face_ms, mouth_ms, args.detect_width, capture_ms, render_ms, display_ms)
             if hud and not game_enabled:
                 # 頭上の星や帽子を隠さないよう、操作説明は画面下に置く。
                 bottom = display.shape[0]
@@ -128,8 +140,12 @@ def main():
             if args.preview_file and now - last_preview >= .5:
                 write_preview(args.preview_file, display, visible, race, fps, ratios)
                 last_preview = now
+            started = time.perf_counter()
             cv2.imshow(WINDOW, display)
             key = cv2.waitKeyEx(1)
+            display_ms = (time.perf_counter()-started)*1000
+            if trace:
+                trace.write(race, ratios, now, fps, camera_fps, capture_ms, face_ms, mouth_ms, render_ms, display_ms)
             if key in (27, ord('q'), ord('Q')):
                 break
             if key == 32:
@@ -169,7 +185,12 @@ def main():
             if cv2.getWindowProperty(WINDOW, cv2.WND_PROP_VISIBLE) < 1:
                 break
     finally:
-        cap.release()
+        if trace:
+            trace.close()
+        if camera:
+            camera.close()
+        else:
+            cap.release()
         sounds.close()
         cv2.destroyAllWindows()
 
