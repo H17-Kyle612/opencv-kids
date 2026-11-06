@@ -40,6 +40,7 @@ def parse_args():
     parser.add_argument('--threshold', type=float, default=.75, help='顔検出のしきい値（既定: 0.75）')
     parser.add_argument('--fullscreen', action=argparse.BooleanOptionalAction, default=True, help='全画面で起動（既定）。--no-fullscreenでウィンドウ表示')
     parser.add_argument('--no-sound', action='store_true', help='効果音を再生しない')
+    parser.add_argument('--commentary', action='store_true', help='Codex App ServerによるAI音声実況を有効にする')
     parser.add_argument('--players', type=int, choices=(1, 2), default=2, help='1: 1人チャレンジ、2: 2人対戦（既定）')
     parser.add_argument('--mirror-only', action='store_true', help='ゲームを自動開始しない')
     parser.add_argument('--min-face', type=int, default=160, help='ゲーム開始に必要な顔幅（既定: 160px、起動後は [ / ] で調整）')
@@ -83,6 +84,11 @@ def main():
         game = CakeGame(args.min_face, args.time_limit, args.players, args.mouth_sensitivity,
                         enabled=not args.mirror_only, sound=not args.no_sound)
         resources.callback(game.close)
+        commentator = None
+        if args.commentary:
+            from commentary import Commentator
+            commentator = Commentator()
+            resources.callback(commentator.close)
         camera = resources.enter_context(open_camera(args.camera, args.camera_fps))
         trace = MouthTrace(args.mouth_trace) if args.mouth_trace else None
         if trace:
@@ -112,6 +118,8 @@ def main():
             timing.face_ms = (time.perf_counter() - started) * 1000
             costume.update(tracker.tracks.keys())
             ratios, timing.mouth_ms = game.update(frame, visible, now, inspect=debug != DEBUG_OFF)
+            if commentator:
+                commentator.update(game.race, now, active=game.enabled)
             started = time.perf_counter()
             display = frame
             if debug == DEBUG_LANDMARKS:
