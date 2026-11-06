@@ -13,7 +13,6 @@ COLORS = ((255, 205, 80), (160, 125, 255))
 GOLD = (100, 225, 255)
 PINE = (31, 66, 25)
 IVORY = (236, 248, 255)
-BERRY = (55, 56, 195)
 
 
 def pill(frame, center, width, height):
@@ -72,9 +71,6 @@ class GameVisuals:
         header_y = 46*unit
         pill(frame, (w/2, header_y), header_width, 58*unit)
         text(frame, label, (w/2, header_y), .91*unit, IVORY)
-        for dx, dy in ((-5, -4), (5, -4), (0, 5)):
-            center = (round(w/2 + header_width/2 + (dx-18)*unit), round(header_y+dy*unit))
-            cv2.circle(frame, center, max(1, round(3.4*unit)), BERRY, -1, cv2.LINE_AA)
 
         for i, (x, y) in enumerate(centers):
             player = race.players[i] if i < len(race.players) else None
