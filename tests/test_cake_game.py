@@ -118,6 +118,22 @@ class RaceTests(unittest.TestCase):
         self.step(tracks=[self.tracks[0]])
         self.assertEqual(self.race.state, 'waiting')
 
+    def test_start_face_width_can_be_adjusted_without_interrupting_a_match(self):
+        self.tracks = [track(1, 180, 120), track(2, 850, 120)]
+        self.step()
+        self.assertEqual(self.race.state, 'waiting')
+
+        self.race.min_face = 120
+        self.start()
+        self.race.min_face = 180
+        self.bite()
+        self.assertEqual(self.race.state, 'playing')
+        self.assertEqual(self.race.players[0].hits, 1)
+
+        self.race.reset()
+        self.step()
+        self.assertEqual(self.race.state, 'waiting')
+
     def test_countdown_does_not_score(self):
         for _ in range(20):
             self.step()

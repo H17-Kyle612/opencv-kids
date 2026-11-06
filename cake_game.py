@@ -2,6 +2,7 @@
 from dataclasses import dataclass, field
 import math
 
+MIN_FACE_WIDTH = 40
 MAX_SENSITIVITY = 10
 DEFAULT_SENSITIVITY = 7
 
@@ -58,8 +59,8 @@ class CakeRace:
     bites_per_cake = 4
 
     def __init__(self, min_face=160, time_limit=30., player_count=2, sensitivity=DEFAULT_SENSITIVITY):
-        if min_face < 40 or not math.isfinite(time_limit) or time_limit <= 0:
-            raise ValueError('min_face>=40、time_limit>0 が必要です')
+        if min_face < MIN_FACE_WIDTH or not math.isfinite(time_limit) or time_limit <= 0:
+            raise ValueError(f'min_face>={MIN_FACE_WIDTH}、time_limit>0 が必要です')
         self.min_face = min_face
         self.time_limit = time_limit
         self.set_player_count(player_count)
@@ -81,6 +82,7 @@ class CakeRace:
 
     def reset(self):
         self.state = 'waiting'
+        self.match_min_face = self.min_face
         self.players = []
         self.ready_since = None
         self.countdown_since = None
@@ -132,11 +134,12 @@ class CakeRace:
             self.state = 'ready'
             if now - self.ready_since >= 1.5:
                 self.reason = ''
+                self.match_min_face = self.min_face
                 self.state = 'countdown'
                 self.countdown_since = now
             return
         present = all(p.track_id in by_id and ratios.get(p.track_id) is not None and
-                      by_id[p.track_id].face[2] >= self.min_face * .75 for p in self.players)
+                      by_id[p.track_id].face[2] >= self.match_min_face * .75 for p in self.players)
         if not present:
             if self.state != 'paused':
                 self.state = 'paused'

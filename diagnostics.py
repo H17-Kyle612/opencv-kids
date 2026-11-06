@@ -6,16 +6,29 @@ from graphics import text, panel
 from cake_game import MAX_SENSITIVITY
 
 
-def draw_guides(frame, tracks, mouth_points, ratios, face_guides=False, labels=True):
+def draw_points(frame, points, color, radius):
+    for x, y in points.astype(int):
+        cv2.circle(frame, (int(x), int(y)), radius, color, -1, cv2.LINE_AA)
+
+
+def draw_landmarks(frame, tracks, landmarks):
+    for track in tracks:
+        draw_points(frame, track.face[4:14].reshape(5, 2), (70, 255, 150), 3)
+    for points in landmarks.values():
+        draw_points(frame, points[:48], (245, 215, 90), 2)
+        draw_points(frame, points[48:68], (30, 255, 90), 2)
+
+
+def draw_guides(frame, tracks, mouth_points, ratios, face_guides=False, labels=True, face_widths=False):
     if face_guides:
         for track in tracks:
-            for x, y in track.face[4:14].reshape(5, 2).astype(int):
-                cv2.circle(frame, (int(x), int(y)), 3, (70, 255, 150), -1, cv2.LINE_AA)
+            draw_points(frame, track.face[4:14].reshape(5, 2), (70, 255, 150), 3)
             x, y, w, h = track.face[:4].astype(int)
             cv2.rectangle(frame, (x, y), (x+w, y+h), (70, 255, 150), 1)
+            if face_widths:
+                text(frame, f'{track.face[2]:.0f}px', (x+w/2, y+h+12), .42, (70, 255, 150))
     for track_id, points in mouth_points.items():
-        for x, y in points[60:68].astype(int):
-            cv2.circle(frame, (int(x), int(y)), 2, (30, 255, 90), -1, cv2.LINE_AA)
+        draw_points(frame, points[60:68], (30, 255, 90), 2)
         x, y = points[54]
         if labels:
             text(frame, f'{ratios.get(track_id, 0):.3f}', (x+35, y), .4, (30, 255, 90))
@@ -40,6 +53,7 @@ def draw_debug(frame, race, ratios, errors, fps, camera_fps, face_ms, mouth_ms, 
     states = {'waiting':'待機', 'ready':'準備', 'countdown':'開始前', 'playing':'競技中', 'paused':'一時停止', 'result':'終了'}
     rows = ['詳細デバッグ　@：表示切替',
             f'進行 {states[race.state]}　開度判定',
+            f'開始の顔幅 {race.min_face}px　[ / ]：調整',
             f'感度 {race.sensitivity}/{MAX_SENSITIVITY}　+ / -：調整',
             f'処理 {fps:.1f} FPS　撮影 {camera_fps:.1f} FPS',
             f'顔 {face_ms:.1f} ms　口 {mouth_ms:.1f} ms　検出幅 {detect_width}',
