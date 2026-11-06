@@ -1,4 +1,5 @@
 """macOS標準のAudioToolboxで、読み込み済みの短い効果音を非同期再生。"""
+from contextlib import ExitStack
 import ctypes
 from ctypes.util import find_library
 import math
@@ -10,6 +11,7 @@ class SoundEffects:
     def __init__(self, enabled=True):
         self.enabled = enabled
         self.ids = {}
+        self.cleanup = ExitStack()
         self.previous_state = None
         self.previous_tick = None
         if not enabled:
@@ -27,9 +29,9 @@ class SoundEffects:
         self.audio.AudioServicesCreateSystemSoundID.restype = ctypes.c_int32
         self.audio.AudioServicesPlaySystemSound.argtypes = [ctypes.c_uint32]
         self.audio.AudioServicesDisposeSystemSoundID.argtypes = [ctypes.c_uint32]
-        try:
+        with ExitStack() as pending:
             for name in ('bite1', 'bite2', 'bite_both', 'tick', 'start', 'cake', 'finish'):
-                path = str(Path(__file__).resolve().parent/'assets'/'sounds'/f'{name}.wav').encode()
+                path = str(Path(__file__).resolve().parents[1]/'assets'/'sounds'/f'{name}.wav').encode()
                 url = core.CFURLCreateFromFileSystemRepresentation(None, path, len(path), False)
                 if not url:
                     raise RuntimeError('効果音ファイルのURLを作成できませんでした')
@@ -41,9 +43,8 @@ class SoundEffects:
                 if status:
                     raise RuntimeError(f'効果音を読み込めませんでした: {name} ({status})')
                 self.ids[name] = identifier.value
-        except Exception:
-            self.close()
-            raise
+                pending.callback(self.audio.AudioServicesDisposeSystemSoundID, identifier.value)
+            self.cleanup = pending.pop_all()
 
     def play(self, name):
         if self.enabled:
@@ -54,8 +55,8 @@ class SoundEffects:
         if active:
             if race.state == 'countdown':
                 tick = ('countdown', race.countdown(now))
-            elif race.state == 'playing' and 0 < race.time_limit-race.elapsed <= 3:
-                tick = ('ending', math.ceil(race.time_limit-race.elapsed))
+            elif race.state == 'playing' and 0 < race.remaining <= 3:
+                tick = ('ending', math.ceil(race.remaining))
             if race.state != self.previous_state:
                 if race.state == 'playing':
                     self.play('start')
@@ -71,6 +72,5 @@ class SoundEffects:
         self.previous_state, self.previous_tick = race.state, tick
 
     def close(self):
-        for identifier in self.ids.values():
-            self.audio.AudioServicesDisposeSystemSoundID(identifier)
+        self.cleanup.close()
         self.ids.clear()

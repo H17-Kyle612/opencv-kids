@@ -1,6 +1,9 @@
 """撮影を表示処理から分離し、古い映像を溜めず最新の1枚だけを渡す。"""
+from contextlib import contextmanager
 import threading
 import time
+
+import cv2
 
 
 class LatestCamera:
@@ -50,3 +53,26 @@ class LatestCamera:
         with self.condition:
             self.condition.notify_all()
         self.worker.join(timeout=2.)
+
+
+@contextmanager
+def open_camera(index, fps):
+    capture = cv2.VideoCapture(index)
+    camera = None
+    try:
+        if not capture.isOpened():
+            raise RuntimeError('カメラを開けません。macOSのカメラ権限と --camera 番号を確認してください。')
+        capture.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        capture.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        capture.set(cv2.CAP_PROP_FPS, fps)
+        width = capture.get(cv2.CAP_PROP_FRAME_WIDTH)
+        height = capture.get(cv2.CAP_PROP_FRAME_HEIGHT)
+        negotiated_fps = capture.get(cv2.CAP_PROP_FPS)
+        print(f'カメラ設定: {width:.0f}x{height:.0f} / {negotiated_fps:.1f} FPS', flush=True)
+        camera = LatestCamera(capture)
+        yield camera
+    finally:
+        if camera is None:
+            capture.release()
+        else:
+            camera.close()

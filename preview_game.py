@@ -2,10 +2,10 @@
 from pathlib import Path
 import cv2
 import numpy as np
-from cake_game import CakeRace, Player
+from cake_chomp.rules import CakeRace, Player
 from tracking import Track
-from accessories import make_sprites, render
-from game_visuals import GameVisuals
+from costume.scene import CostumeScene
+from cake_chomp.visuals import GameVisuals
 
 
 def background():
@@ -19,14 +19,15 @@ def background():
         cv2.ellipse(frame, (x, y+25), (25, 16), 0, 0, 180, (40, 40, 40), 3, cv2.LINE_AA)
         face = np.array([x-76, y-95, 152, 190, x-27, y-22, x+27, y-22,
                          x, y, x-25, y+25, x+25, y+25, .99], np.float32)
-        tracks.append(Track(i+1, face, ('star' if i == 0 else 'santa', 'none', 'none'), 0))
+        tracks.append(Track(i+1, face, 0.))
     return frame, tracks
 
 
 def main():
     folder = Path(__file__).resolve().parent / 'outputs'
     folder.mkdir(exist_ok=True)
-    visuals, sprites = GameVisuals(), make_sprites()
+    visuals, costume = GameVisuals(), CostumeScene()
+    costume.outfits = {1: ('star', 'none', 'none'), 2: ('santa', 'none', 'none')}
     race = CakeRace()
     race.players = [Player(1, hits=5), Player(2, hits=7)]
     snapshots = []
@@ -39,8 +40,8 @@ def main():
         race.reason = '時間終了！'
         if state == 'result':
             race.players[0].hits = 19
-        render(frame, tracks, sprites, 1.2)
-        visuals.draw(frame, race, tracks, {1:.025, 2:.3}, 1.2)
+        costume.draw(frame, tracks, 1.2, winner_id=race.winner_track_id, snowfall=False)
+        visuals.draw(frame, race, 1.2)
         path = folder / f'game_{state}.png'
         cv2.imwrite(str(path), frame)
         snapshots.append(cv2.resize(frame, (640, 360)))
@@ -60,16 +61,11 @@ def main():
             race.elapsed = now
             race.events = []
             if i in (12, 28, 44, 60, 78, 96, 114, 130):
-                player = race.players[0]
-                player.hits += 1
-                player.last_bite = now
-                race.events.append(0)
+                race.record_bite(0, now)
             if i in (20, 50, 85, 120):
-                race.players[1].hits += 1
-                race.players[1].last_bite = now
-                race.events.append(1)
-            render(frame, tracks, sprites, now)
-            visuals.draw(frame, race, tracks, {1:.2, 2:.1}, now)
+                race.record_bite(1, now)
+            costume.draw(frame, tracks, now, snowfall=False)
+            visuals.draw(frame, race, now)
             writer.write(frame)
     finally:
         writer.release()

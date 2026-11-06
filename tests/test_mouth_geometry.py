@@ -1,6 +1,6 @@
 import unittest
 import numpy as np
-from vision import mouth_measurement
+from cake_chomp.mouth import mouth_measurement
 
 class MouthGeometryTests(unittest.TestCase):
     def points(self):

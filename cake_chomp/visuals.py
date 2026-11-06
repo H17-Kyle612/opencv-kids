@@ -8,7 +8,7 @@ import numpy as np
 
 from graphics import load_rgba, blit, text
 
-ASSETS = Path(__file__).resolve().parent / 'assets' / 'generated'
+ASSETS = Path(__file__).resolve().parents[1] / 'assets' / 'generated'
 COLORS = ((255, 205, 80), (160, 125, 255))
 GOLD = (100, 225, 255)
 PINE = (31, 66, 25)
@@ -43,9 +43,7 @@ class GameVisuals:
                                    self.rng.choice((color, GOLD, (245, 250, 255), (100, 130, 255))),
                                    self.rng.randint(3, 9)))
 
-    def draw(self, frame, race, tracks, ratios, now, enabled=True):
-        if not enabled:
-            return
+    def draw(self, frame, race, now):
         h, w = frame.shape[:2]
         unit = min(w/1280, h/720)
         solo = race.player_count == 1
@@ -60,7 +58,7 @@ class GameVisuals:
         self._particles(frame, now)
 
         status = {'waiting': '顔を映してね', 'ready': '準備！',
-                  'playing': f'残り {max(0., race.time_limit-race.elapsed):04.1f}秒',
+                  'playing': f'残り {race.remaining:04.1f}秒',
                   'paused': '一時停止', 'result': '終了！'}
         label = status.get(race.state)
         if race.state == 'countdown':

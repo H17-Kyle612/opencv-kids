@@ -1,7 +1,7 @@
 import unittest
 from types import SimpleNamespace
 import numpy as np
-from cake_game import MouthCycle, CakeRace
+from cake_chomp.rules import MouthCycle, CakeRace
 
 
 def track(number, x, width=190):
@@ -70,7 +70,7 @@ class RaceTests(unittest.TestCase):
         self.now = 0.
 
     def test_live_sensitivity_change_preserves_score_and_time_and_clears_partial_bite(self):
-        from cake_game import Player
+        from cake_chomp.rules import Player
         self.race.players = [Player(1), Player(2)]
         self.race.state = 'playing'
         self.race.elapsed = 12.
