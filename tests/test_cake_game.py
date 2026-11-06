@@ -152,6 +152,7 @@ class RaceTests(unittest.TestCase):
         self.step()
         self.assertEqual(self.race.state, 'result')
         self.assertEqual(self.race.winners, [0])
+        self.assertEqual(self.race.winner_track_id, self.race.players[0].track_id)
         self.assertEqual(self.race.elapsed, self.race.time_limit)
         elapsed, hits = self.race.elapsed, self.race.players[0].hits
         self.step(duration=1)
@@ -165,6 +166,7 @@ class RaceTests(unittest.TestCase):
         self.race.time_limit = self.race.elapsed + .05
         self.step()
         self.assertEqual(self.race.winners, [0, 1])
+        self.assertIsNone(self.race.winner_track_id)
 
     def test_mouth_sample_after_deadline_cannot_score(self):
         self.start()

@@ -179,5 +179,11 @@ class CakeRace:
                     player.last_bite = now
                     self.events.append(i)
 
+    @property
+    def winner_track_id(self):
+        if self.state == 'result' and len(self.winners) == 1:
+            return self.players[self.winners[0]].track_id
+        return None
+
     def countdown(self, now):
         return max(1, 3 - int(now - self.countdown_since))

@@ -68,7 +68,7 @@ class CommentaryDebug:
                     (self.reaction_at is None or now-self.reaction_at >= 6.))
 
     def should_send(self, context):
-        return self.can_react() and (bool(context.get('react')) or context['state'] in ('waiting', 'ready', 'countdown', 'paused'))
+        return context['state'] in ('playing', 'result') and bool(context.get('react')) and self.can_react()
 
     def reset_voice(self):
         with self.lock:

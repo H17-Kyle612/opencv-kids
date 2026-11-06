@@ -15,6 +15,24 @@ PROMPT = DEFAULT_PROMPT
 REQUESTED_MODEL = None
 
 
+VOICE_RULES = """Voice delivery: fastest clear Japanese sports-announcer pace, rapid connected articulation, no pauses between clauses, and one short call per update.
+観客全体に向けて、日本語の試合実況だけを発話する。このルールは下の演出設定より優先する。選手はプレイヤー番号で呼び、観客に話しかけたり会話調の「〜ね」「〜よ」で締めたりしない。
+受領確認、挨拶、前置き、質問、待機の宣言、操作案内、舞台裏の説明は一切発話しない。モデル名、システム、バックエンド、ツール、処理、入力、指示、データの受信・更新・取得には触れない。「続報を待ちます」「確認します」「データでは」のような言葉も禁止。実況できる事実がなければ無言で終える。
+最初の試合の事実が届くまで無言。試合状況が届くたびに、それを合図として即座に声を出す。playingは今の見せ場を一声、開始なら「さあ、スタート！」。resultは確定した勝敗か1人の達成だけを一声で叫ぶ。理由や振り返りは加えない。
+一息で1〜2秒、15文字程度の短い一声だけ。第一声から、聞き取れる限界の超早口。子音をはっきりつないで、節と節の間をほとんど空けず、語尾まで同じ速度で言い切る。数字の列挙や二文目は省く。
+close_race=trueは両者が得点して差が2口以内の接戦。まず接戦を大きな声で叫ぶ。たとえば「接戦だーーーっ！」「並んだ並んだ！まだ伸びる！」。声を跳ね上げ、山場の一語だけ伸ばして、残りは一気に畳みかける。並んだ・逆転したと言うのは実際にそうなった時だけ。例文を毎回繰り返さない。
+Backchannel policy: 相づち・聞き返し・受領確認は発話しない。
+Interruption policy: 一息の実況を最後まで言い切る。
+Delegation policy:
+Backend tools: なし。
+Generate <|SpawnThinking|> when: 該当なし。
+Do not generate <|SpawnThinking|> when: 常に。"""
+
+
+def session_prompt(style):
+    return f'{VOICE_RULES}\n\n演出設定（上の発話ルールの範囲内で適用）\n{style.strip()}'
+
+
 class CodexClient:
     def __init__(self, on_process=None):
         executable = shutil.which('codex')
@@ -93,8 +111,9 @@ class CodexClient:
             'version': 'v3', 'voice': voice,
             'transport': {'type': 'webrtc', 'sdp': offer},
             'includeStartupContext': False, 'clientManagedHandoffs': True,
+            'backendReasoningStatus': False, 'delegationAckFiller': False,
             'flushTranscriptTailOnSessionEnd': False,
-            'prompt': PROMPT if prompt is None else prompt,
+            'prompt': session_prompt(PROMPT if prompt is None else prompt),
             'initialItems': [{'role':'developer', 'text':initial}],
         })
         deadline = time.monotonic()+30
@@ -111,8 +130,13 @@ class CodexClient:
 
     @staticmethod
     def context_params(thread_id, context):
-        return {'threadId':thread_id, 'role':'developer',
-                'text':json.dumps(context, ensure_ascii=False, separators=(',', ':'))}
+        control_fields = {'match', 'event_id', 'priority', 'react'}
+        facts = {key: value for key, value in context.items() if key not in control_fields}
+        bites = facts['bites']
+        if facts['state'] == 'playing' and facts['mode'] == 'versus' and len(bites) == 2:
+            facts['close_race'] = min(bites) > 0 and abs(bites[0] - bites[1]) <= 2
+        return {'threadId':thread_id, 'role':'user',
+                'text':json.dumps(facts, ensure_ascii=False, separators=(',', ':'))}
 
     def append_context(self, context):
         params = self.context_params(self.thread_id, context)

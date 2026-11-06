@@ -7,7 +7,7 @@ import secrets
 import time
 import threading
 import webbrowser
-from codex_client import CodexClient, REQUESTED_MODEL
+from codex_client import CodexClient, REQUESTED_MODEL, session_prompt
 from commentary_settings import CommentarySettings, DEFAULT_PROMPT, DEFAULT_VOICE
 from commentary_context import MatchStory, leaders
 from commentary_debug import CommentaryDebug, timestamp
@@ -183,7 +183,7 @@ class Commentator:
                             chosen = self.settings.snapshot()
                             self.settings.validate(chosen['prompt'], chosen['voice'], self.voices or None)
                             answer = client.start_voice(offer, prompt=chosen['prompt'], voice=chosen['voice'])
-                            self.active_settings = chosen
+                            self.active_settings = {**chosen, 'prompt': session_prompt(chosen['prompt'])}
                             self.status = '音声接続待ち'
                             reply.put({'sdp':answer})
                             print('AI実況: Codex App Server / GPT-Live（実モデル名未取得） / WebRTC / ChatGPTログイン', flush=True)

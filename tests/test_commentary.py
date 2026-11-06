@@ -75,7 +75,12 @@ class CommentaryTests(unittest.TestCase):
     def test_sent_json_contains_latest_scores_without_a_second_background_route(self):
         context, _ = MatchStory().observe(race(), 100.)
         params = CodexClient.context_params('thread', context)
-        self.assertEqual(json.loads(params['text']), context)
+        facts = json.loads(params['text'])
+        self.assertEqual(params['role'], 'user')
+        self.assertEqual(facts['bites'], context['bites'])
+        self.assertEqual(facts['events'], context['events'])
+        self.assertTrue(facts['close_race'])
+        self.assertTrue({'match', 'event_id', 'priority', 'react'}.isdisjoint(facts))
 
     def test_disabled_game_sends_waiting_without_winner(self):
         self.assertEqual(game_context(race('result'), False)['state'], 'waiting')
@@ -117,7 +122,7 @@ class MatchStoryTests(unittest.TestCase):
         client = CodexClient.__new__(CodexClient)
         params = client.context_params('thread', context)
         self.assertFalse(CommentaryDebug().should_send(context))
-        self.assertEqual(json.loads(params['text']), context)
+        self.assertEqual(json.loads(params['text'])['bites'], context['bites'])
 
     def test_result_waits_until_idle_then_requests_one_closing_sentence(self):
         story = MatchStory()
@@ -278,6 +283,12 @@ class DebugTests(unittest.TestCase):
         debug.last_end -= 1.
         self.assertTrue(debug.should_send({'state':'result','react':True}))
 
+    def test_idle_and_paused_states_stay_local_even_when_audio_is_idle(self):
+        debug = CommentaryDebug()
+        for state in ('waiting', 'ready', 'countdown', 'paused'):
+            self.assertFalse(debug.should_send({'state':state, 'react':False}))
+        self.assertTrue(debug.should_send({'state':'playing', 'react':True}))
+
     def test_debug_records_exact_sent_payload_and_bounds_history(self):
         debug = CommentaryDebug()
         context = game_context(race())
@@ -340,12 +351,16 @@ class AppServerVoiceTests(unittest.TestCase):
         self.assertNotIn('model', params)
         self.assertEqual(params['transport'], {'type':'webrtc','sdp':'offer'})
         self.assertFalse(params['includeStartupContext'])
+        self.assertFalse(params['backendReasoningStatus'])
+        self.assertFalse(params['delegationAckFiller'])
 
     def test_browser_prompt_and_selected_voice_are_passed_to_app_server(self):
         client = self.client({'method':'thread/realtime/sdp','params':{'sdp':'answer'}})
         client.start_voice('offer',prompt='ケーキにちなんだ洒落を交えて実況。',voice='miko')
         params = client.rpc.call_args.args[1]
-        self.assertEqual(params['prompt'],'ケーキにちなんだ洒落を交えて実況。')
+        self.assertIn('ケーキにちなんだ洒落を交えて実況。', params['prompt'])
+        self.assertIn('バックエンド', params['prompt'])
+        self.assertIn('接戦だーーーっ！', params['prompt'])
         self.assertEqual(params['voice'],'miko')
         self.assertNotIn('bites', params['initialItems'][0]['text'])
         self.assertIn('無言', params['initialItems'][0]['text'])
