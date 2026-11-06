@@ -21,6 +21,9 @@ def latest(target, value):
         old, new = older['context'], value['context']
         if old.get('react') and (old['match'], old['state']) == (new['match'], new['state']):
             new['react'] = True
+            if new['state'] == 'playing' and new['elapsed_seconds'] < 1 and {'type': 'start'} in old['events']:
+                if {'type': 'start'} not in new['events']:
+                    new['events'] = [{'type': 'start'}, *new['events']]
             if old.get('priority') == 'urgent' and old.get('leaders') == new.get('leaders'):
                 new['priority'] = 'urgent'
     except queue.Empty:

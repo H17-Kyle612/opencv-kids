@@ -7,7 +7,7 @@ def game_context(race, active=True):
             'state': race.state if active else 'waiting',
             'remaining_seconds': round(race.remaining, 1),
             'bites': [p.hits for p in race.players],
-            'cakes': [p.hits/race.bites_per_cake for p in race.players],
+            'cakes': [p.hits//race.bites_per_cake for p in race.players],
             'winners': [i+1 for i in race.winners] if active and race.state == 'result' else []}
 
 
@@ -56,6 +56,7 @@ class MatchStory:
             self.decisive_leader = None
             self.last_urgent = -float('inf')
         elapsed, hits = race.elapsed, tuple(context['bites'])
+        kickoff = not self.history and elapsed < 1
         if context['state'] == 'playing':
             if not self.history or elapsed > self.history[-1][0]:
                 self.history.append((elapsed, hits))
@@ -86,11 +87,11 @@ class MatchStory:
         changed = previous is None or context['state'] != previous['state'] or reset
         if context['state'] == 'playing':
             if changed:
-                events.append({'type': 'start' if elapsed < 1 else 'resume'})
+                events.append({'type': 'start' if kickoff else 'resume'})
             if observed and observed['match'] == self.match:
                 for i, (a, b) in enumerate(zip(context['cakes'], observed['cakes'])):
-                    if int(a) > int(b):
-                        events.append({'type':'cake_finished', 'player':i+1, 'count':int(a)-int(b)})
+                    if a > b:
+                        events.append({'type':'cake_finished', 'player':i+1, 'count':a-b})
                 if context['leaders'] and observed['leaders'] != context['leaders']:
                     events.append({'type':'lead_change', 'leaders':context['leaders']})
                 for seconds in (10, 5):

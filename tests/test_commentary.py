@@ -40,7 +40,7 @@ class CommentaryTests(unittest.TestCase):
     def test_context_contains_only_game_data(self):
         context = game_context(race('result'))
         self.assertEqual(context, {'mode':'versus','state':'result','remaining_seconds':20.,
-                                  'bites':[8,9],'cakes':[2.,2.25],'winners':[2]})
+                                  'bites':[8,9],'cakes':[2,2],'winners':[2]})
 
     def test_solo_context_has_no_opponent_or_winner(self):
         game = race('result')
@@ -49,7 +49,7 @@ class CommentaryTests(unittest.TestCase):
         game.winners = []
         context = game_context(game)
         self.assertEqual(context['mode'], 'solo')
-        self.assertEqual(context['cakes'], [2.])
+        self.assertEqual(context['cakes'], [2])
         self.assertEqual(context['winners'], [])
 
     def test_latest_context_replaces_backlog(self):
@@ -86,6 +86,33 @@ class CommentaryTests(unittest.TestCase):
         self.assertEqual(facts['events'], context['events'])
         self.assertTrue(facts['close_race'])
         self.assertTrue({'match', 'event_id', 'priority', 'react'}.isdisjoint(facts))
+
+    def test_opening_survives_the_first_snapshot_update_but_does_not_repeat_on_resume(self):
+        voice = commentator()
+        game = race()
+        game.elapsed = 0.
+        voice.update(game, 100.)
+        game.elapsed = .5
+        voice.update(game, 100.5)
+        packet = voice.pending.get_nowait()
+        text = CodexClient.context_params('thread', packet['context'])['text']
+        self.assertEqual(text.splitlines()[1], '「さあ始まりました！」')
+        game.state = 'paused'
+        voice.update(game, 100.6)
+        game.state = 'playing'
+        voice.update(game, 100.7)
+        context = voice.pending.get_nowait()['context']
+        self.assertEqual(context['events'], [{'type': 'resume'}])
+
+    def test_live_counts_whole_cakes_and_flags_only_a_good_measured_pace(self):
+        context = game_context(race()) | {'recent_window_seconds': 3., 'bites_per_second': [1.6, .7]}
+        cue, data = CodexClient.context_params('thread', context)['text'].split('\n', 1)
+        facts = json.loads(data)
+        self.assertEqual(facts['cakes'], [2, 2])
+        self.assertEqual(facts['bites'], [8, 9])
+        self.assertEqual(facts['good_pace_players'], [1])
+        self.assertIn('「個」', cue)
+        self.assertIn('「口」', cue)
 
     def test_each_finish_sends_only_its_fixed_line_to_live_once(self):
         voice = commentator()

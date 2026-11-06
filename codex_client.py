@@ -114,16 +114,26 @@ class CodexClient:
 
     @staticmethod
     def context_params(thread_id, context):
+        fixed_line = None
         if context['state'] == 'result':
-            text = f"固定台詞だけを日本語で一字一句そのまま言って、無言で終える。\n「{finish_phrase(context)}」"
+            fixed_line = finish_phrase(context)
+        elif context['state'] == 'playing' and {'type': 'start'} in context.get('events', ()):
+            fixed_line = 'さあ始まりました！'
+
+        if fixed_line is not None:
+            text = f'固定台詞だけを日本語の早口で一字一句そのまま言って、無言で終える。\n「{fixed_line}」'
         else:
             control_fields = {'match', 'event_id', 'priority', 'react'}
             facts = {key: value for key, value in context.items() if key not in control_fields}
             bites = facts['bites']
             if facts['state'] == 'playing' and facts['mode'] == 'versus' and len(bites) == 2:
                 facts['close_race'] = min(bites) > 0 and abs(bites[0] - bites[1]) <= 2
+            if facts.get('recent_window_seconds', 0) >= 1:
+                facts['good_pace_players'] = [
+                    i for i, pace in enumerate(facts.get('bites_per_second', ()), 1) if pace >= 1.5
+                ]
             cue = ('日本語の超早口で、今の見せ場を10文字前後の叫び一つで実況。'
-                   '言い切ったら止まる。数字の列挙や二言目は不要。\n')
+                   'ケーキは「個」、食べた回数と点差は「口」。言い切ったら止まる。\n')
             text = cue + json.dumps(
                 facts, ensure_ascii=False, separators=(',', ':'))
         return {'threadId':thread_id, 'role':'user', 'text':text}
