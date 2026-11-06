@@ -130,7 +130,8 @@ def main():
                 display = frame
             else:
                 snow.draw(frame, dt, now)
-                render(frame, visible, sprites, now, head_offset)
+                winner_id = race.winner_track_id if game_enabled else None
+                render(frame, visible, sprites, now, head_offset, winner_id=winner_id)
                 visuals.draw(frame, race, visible, ratios, now, game_enabled)
                 details = debug == DEBUG_DETAILS
                 display = frame.copy() if details or guides or args.mouth_debug or (hud and not game_enabled) else frame

@@ -1,4 +1,4 @@
-"""生成素材の顔への配置、星の光、雪の描画。"""
+"""生成素材の顔への配置、星と王冠の光、雪の描画。"""
 import math
 import cv2
 import numpy as np
@@ -8,12 +8,17 @@ from pathlib import Path
 
 ASSETS = Path(__file__).resolve().parent / 'assets' / 'generated'
 
+HEAD_ACCESSORIES = (*HEADS, 'crown')
+CROWN_GLOW_CENTER_Y = 185
+GLOW_FPS = 16
+
 # 基準点は christmas_camera.placement と共通。
 BOXES = {
     'santa': (80, 70, 240, 190),
     'beard': (99, 373, 202, 142),
     'antlers': (38, 70, 324, 180),
     'star': (142, 98, 116, 116),
+    'crown': (100, 120, 200, 119),
     'gift': (110, 85, 180, 149),
     'cross': (150, 82, 100, 140),
     'red': (175, 325, 50, 50),
@@ -25,6 +30,9 @@ def make_sprites():
     sprites = {}
     for name, (x, y, w, h) in BOXES.items():
         source = load_rgba(ASSETS / f'{name}.png')
+        if name == 'crown':
+            left, top, width, height = cv2.boundingRect(source[:, :, 3])
+            source = source[top:top+height, left:left+width]
         scale = min(w/source.shape[1], h/source.shape[0])
         sw, sh = max(1, round(source.shape[1]*scale)), max(1, round(source.shape[0]*scale))
         # プリマルチプライで縮小し、透明部分の黒が輪郭に混ざるのを防ぐ。
@@ -49,7 +57,7 @@ def placement(face, name='red', head_offset=0.):
     mouth = (face[10:12] + face[12:14]) / 2
     width = max(float(face[2]), 1.)
     angle = math.degrees(math.atan2(float(right[1]), float(right[0])))
-    if name in HEADS:
+    if name in HEAD_ACCESSORIES:
         origin = (200, 239)
         target = eye_center - down * width * (.40 - head_offset)
     elif name == 'beard':
@@ -68,7 +76,7 @@ def placement(face, name='red', head_offset=0.):
 
 def composite(frame, sprite, face, opacity=1., name='red', head_offset=0.):
     matrix = placement(face, name, head_offset)
-    if name in HEADS:
+    if name in HEAD_ACCESSORIES:
         # 頭上が狭いときは取り付け位置を保ったまま飾りだけ小さくする。
         x, y, w, h = cv2.boundingRect((sprite[:, :, 3] > 12).astype(np.uint8))
         bounds = np.array([[[x, y], [x+w, y], [x+w, y+h], [x, y+h]]], np.float32)
@@ -103,10 +111,16 @@ def composite(frame, sprite, face, opacity=1., name='red', head_offset=0.):
     roi[:] = np.clip(patch[:, :, :3] * (255 * opacity) + roi * (1 - alpha), 0, 255).astype(np.uint8)
 
 
-def star_animation(base, count=24):
+def star_animation(base, count=24, *, center_y=156, jewel=None):
     """柔らかい後光、白金の本体、時間差で瞬く小さな光を事前生成。"""
     yy, xx = np.mgrid[:600, :400]
-    distance = (xx - 200) ** 2 + (yy - 156) ** 2
+    distance = (xx - 200) ** 2 + (yy - center_y) ** 2
+    sparkles = [(x, y + center_y - 156) for x, y in (
+        (108, 122), (282, 93), (286, 207), (124, 227),
+        (200, 70), (315, 159), (91, 177), (235, 244),
+    )]
+    if jewel is not None:
+        sparkles.append(jewel)
     frames = []
     for index in range(count):
         phase = index * math.tau / count
@@ -121,7 +135,7 @@ def star_animation(base, count=24):
         color = (base[:, :, :3] * alpha + image[:, :, :3] * old_alpha * (1 - alpha)) / np.maximum(result_alpha, 1e-6)
         image[:, :, :3] = np.clip(color, 0, 255).astype(np.uint8)
         image[:, :, 3] = (result_alpha[:, :, 0] * 255).astype(np.uint8)
-        for i, (x, y) in enumerate(((108, 122), (282, 93), (286, 207), (124, 227), (200, 70), (315, 159), (91, 177), (235, 244))):
+        for i, (x, y) in enumerate(sparkles):
             intensity = max(0., math.sin(phase + i * 1.6)) ** 3
             if intensity < .03:
                 continue
@@ -136,11 +150,15 @@ def star_animation(base, count=24):
             angle = ray*math.pi/4 + .07*math.sin(phase)
             inner = 63
             outer = 80 + 23*strength
-            a = (int(200+math.cos(angle)*inner), int(156+math.sin(angle)*inner))
-            b = (int(200+math.cos(angle)*outer), int(156+math.sin(angle)*outer))
+            a = (int(200+math.cos(angle)*inner), int(center_y+math.sin(angle)*inner))
+            b = (int(200+math.cos(angle)*outer), int(center_y+math.sin(angle)*outer))
             cv2.line(image, a, b, (225, 250, 255, int(100+150*strength)), 2, cv2.LINE_AA)
         frames.append(image)
     return frames
+
+
+def crown_animation(sprite):
+    return star_animation(sprite, center_y=CROWN_GLOW_CENTER_Y, jewel=(200, 195))
 
 
 class Snow:
@@ -162,17 +180,20 @@ class Snow:
         cv2.addWeighted(layer, .65, frame, .35, 0, dst=frame)
 
 
-def render(frame, tracks, sprites, now, head_offset=0.):
-    if '_star_frames' not in sprites:
-        sprites['_star_frames'] = star_animation(sprites['star'])
+def render(frame, tracks, sprites, now, head_offset=0., winner_id=None):
     for track in sorted(tracks, key=lambda t: t.face[2]):
         head, nose, surround = track.outfit
+        if track.number == winner_id:
+            head = 'crown'
         for name in (surround, head, nose):
             if name == 'none':
                 continue
             sprite = sprites[name]
-            if name == 'star':
-                frames = sprites['_star_frames']
-                sprite = frames[int((now + track.number * .31) * 16) % len(frames)]
+            if name in ('star', 'crown'):
+                key = f'_{name}_frames'
+                if key not in sprites:
+                    animate = crown_animation if name == 'crown' else star_animation
+                    sprites[key] = animate(sprite)
+                frames = sprites[key]
+                sprite = frames[int((now + track.number * .31) * GLOW_FPS) % len(frames)]
             composite(frame, sprite, track.face, name=name, head_offset=head_offset)
-

@@ -90,6 +90,22 @@ class RenderingTests(unittest.TestCase):
         render(later, tracks, sprites, .4)
         self.assertFalse(np.array_equal(early, later))
 
+    def test_result_crown_animates_only_on_the_winner_without_changing_costumes(self):
+        sprites = make_sprites()
+        tracker = Tracker(seed=0)
+        tracker.choose(LOOKS[0])
+        tracks = tracker.update(np.array([face(120, 180), face(430, 180)]), 0.)
+        normal = np.zeros((480, 640, 3), np.uint8)
+        winner = normal.copy()
+        later = normal.copy()
+        render(normal, tracks, sprites, 0.)
+        render(winner, tracks, sprites, 0., winner_id=tracks[0].number)
+        render(later, tracks, sprites, .4, winner_id=tracks[0].number)
+        self.assertFalse(np.array_equal(normal[:, :320], winner[:, :320]))
+        self.assertFalse(np.array_equal(winner[:, :320], later[:, :320]))
+        np.testing.assert_array_equal(normal[:, 320:], winner[:, 320:])
+        self.assertTrue(all(track.outfit == LOOKS[0] for track in tracks))
+
     def test_head_ornaments_fit_when_camera_has_little_headroom(self):
         sprites = make_sprites()
         for name in ('santa', 'antlers', 'star', 'gift', 'cross'):
