@@ -33,32 +33,23 @@ def write_preview(path, frame, tracks, race, fps, ratios):
     path.with_suffix('.json').write_text(json.dumps(info))
 
 
-def draw_debug(frame, race, ratios, errors, fps, camera_fps, face_ms, mouth_ms, detect_width, capture_ms=0., render_ms=0., display_ms=0., motion=None):
+def draw_debug(frame, race, ratios, errors, fps, camera_fps, face_ms, mouth_ms, detect_width, capture_ms=0., render_ms=0., display_ms=0.):
     h, w = frame.shape[:2]
     unit = min(w/1280, h/720)
     fmt = lambda value: '---' if value is None else f'{value:.3f}'
     states = {'waiting':'待機', 'ready':'準備', 'countdown':'開始前', 'playing':'競技中', 'paused':'一時停止', 'result':'終了'}
-    mode = '校正付き開閉・待機なし'
     rows = ['詳細デバッグ　@：表示切替',
-            f'進行 {states[race.state]}　方式 {mode}',
+            f'進行 {states[race.state]}　開度判定',
             f'感度 {race.sensitivity}/{MAX_SENSITIVITY}　+ / -：調整',
             f'処理 {fps:.1f} FPS　撮影 {camera_fps:.1f} FPS',
             f'顔 {face_ms:.1f} ms　口 {mouth_ms:.1f} ms　検出幅 {detect_width}',
-            f'取得 {capture_ms:.1f} ms　描画 {render_ms:.1f} ms　表示 {display_ms:.1f} ms',
-            '基準は準備中に校正　R：再準備']
+            f'取得 {capture_ms:.1f} ms　描画 {render_ms:.1f} ms　表示 {display_ms:.1f} ms']
     for i, player in enumerate(race.players):
         mouth = player.mouth
         close, opening = mouth.targets
         rows.extend([f'プレイヤー{i+1}　{mouth.phase}　{player.hits}口',
-                     f'開度 {fmt(ratios.get(player.track_id))}　判定値 {fmt(mouth.filtered_ratio)}',
-                     f'基準 {fmt(mouth.baseline)}　準備時の揺れ {fmt(mouth.noise_span)}',
+                     f'開度 {fmt(ratios.get(player.track_id))}',
                      f'開くライン {fmt(opening)}　戻るライン {fmt(close)}'])
-        if mouth.sensitivity>=6:
-            rows.append(f'開閉の差 {fmt(mouth.movement)}　閉じ許容 {fmt(max(.01,mouth.noise_span))}')
-        if motion and player.track_id in motion:
-            direction, delta = motion[player.track_id]
-            label = {0:'未確認',1:'開く',-1:'閉じる'}[direction]
-            rows.append(f'画像の直近方向 {label}　変位 {delta:+.2f} px')
         if player.track_id in errors:
             rows.append('口未検出：'+errors[player.track_id])
     height = min(h-90*unit, (len(rows)*27+20)*unit)
@@ -73,13 +64,13 @@ class MouthTrace:
     def __init__(self, path):
         path.parent.mkdir(parents=True, exist_ok=True)
         self.file = path.open('w', newline='')
-        fields = ('at','state','elapsed','player','hits','raw','filtered','phase','movement',
-                  'opening','closing','baseline','noise','direction','lip_delta_px','fps','camera_fps','capture_ms','face_ms','mouth_ms','render_ms','display_ms')
+        fields = ('at','state','elapsed','player','hits','raw','phase',
+                  'opening','closing','fps','camera_fps','capture_ms','face_ms','mouth_ms','render_ms','display_ms')
         self.writer = csv.DictWriter(self.file, fieldnames=fields)
         self.writer.writeheader()
         self.last_flush = 0.
 
-    def write(self, race, ratios, now, fps, camera_fps, capture_ms, face_ms, mouth_ms, render_ms, display_ms, motion=None):
+    def write(self, race, ratios, now, fps, camera_fps, capture_ms, face_ms, mouth_ms, render_ms, display_ms):
         for player in race.players or [None]:
             row = dict(at=now,state=race.state,elapsed=race.elapsed,fps=fps,camera_fps=camera_fps,
                        capture_ms=capture_ms,face_ms=face_ms,mouth_ms=mouth_ms,render_ms=render_ms,display_ms=display_ms)
@@ -87,10 +78,7 @@ class MouthTrace:
                 mouth = player.mouth
                 close, opening = mouth.targets
                 row.update(player=player.track_id,hits=player.hits,raw=ratios.get(player.track_id),
-                           filtered=mouth.filtered_ratio,phase=mouth.phase,movement=mouth.movement,
-                           opening=opening,closing=close,baseline=mouth.baseline,noise=mouth.noise_span)
-                if motion and player.track_id in motion:
-                    row.update(zip(('direction', 'lip_delta_px'), motion[player.track_id]))
+                           phase=mouth.phase,opening=opening,closing=close)
             self.writer.writerow(row)
         if now-self.last_flush>=.5:
             self.file.flush()

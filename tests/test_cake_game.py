@@ -10,89 +10,43 @@ def track(number, x, width=190):
 
 class MouthTests(unittest.TestCase):
     def test_one_open_close_cycle_counts_once(self):
-        mouth = MouthCycle(.025)
+        mouth = MouthCycle()
         sequence = [(0., .02), (.08, .02), (.16, .3), (.24, .3), (.32, .02), (.40, .02), (.50, .02), (.60, .02)]
         self.assertEqual(sum(mouth.update(ratio) for now, ratio in sequence), 1)
 
     def test_small_mouth_opening_counts_a_complete_cycle(self):
-        mouth = MouthCycle(.025)
+        mouth = MouthCycle()
         sequence = [(0., .02), (.08, .02), (.16, .12), (.24, .12), (.32, .02), (.40, .02)]
         self.assertEqual(sum(mouth.update(ratio) for now, ratio in sequence), 1)
 
     def test_closed_mouth_noise_does_not_count(self):
-        mouth = MouthCycle(.025)
+        mouth = MouthCycle()
         sequence = [(0., .02), (.08, .02), (.16, .03), (.24, .03), (.32, .02), (.40, .02)]
         self.assertEqual(sum(mouth.update(ratio) for now, ratio in sequence), 0)
 
     def test_default_counts_a_gentle_opening_that_old_threshold_rejected(self):
-        sequence = (.025, .025, .07, .07, .025, .025)
+        sequence = (.025, .025, .09, .09, .025, .025)
         easy, old = MouthCycle(), MouthCycle(sensitivity=1)
         self.assertEqual(sum(easy.update(r) for r in sequence), 1)
         self.assertEqual(sum(old.update(r) for r in sequence), 0)
 
-    def test_sensitivity_is_monotonic_for_different_closed_baselines(self):
-        for baseline in (.005, .025, .08, .13):
-            previous = 0
-            for level in range(1, 11):
-                mouth = MouthCycle(baseline, level)
-                count = sum(mouth.update(r) for r in (baseline, baseline+.046, baseline))
-                self.assertGreaterEqual(count, previous)
-                previous = count
-            self.assertEqual(previous, 1)
+    def test_fixed_thresholds_depend_only_on_sensitivity(self):
+        self.assertEqual(MouthCycle().targets, (.05, .085))
+        thresholds = [MouthCycle(level).targets for level in range(1, 11)]
+        self.assertEqual([close for close, _ in thresholds], [.05] * 10)
+        for (_, previous), (_, current) in zip(thresholds, thresholds[1:]):
+            self.assertGreater(previous, current)
+            self.assertGreater(current, .05)
 
-    def test_high_sensitivity_counts_without_returning_to_calibrated_closed_position(self):
-        gentle, fixed = MouthCycle(.025, 8, noise_span=.025), MouthCycle(.025, 5)
-        sequence = tuple(r for r in (.045, .045, .08, .045, .08, .045) for _ in range(2))
-        self.assertEqual(sum(gentle.update(r) for r in sequence), 2)
-        self.assertEqual(sum(fixed.update(r) for r in sequence), 0)
-
-    def test_high_sensitivity_small_cycles_and_holding_open(self):
-        mouth = MouthCycle(sensitivity=7)
-        self.assertEqual(sum(mouth.update(r) for r in tuple(r for r in (.025,.025,.08,.026,.08,.027) for _ in range(2))), 2)
-        for ratio in (.027,.03,.028,.031,.029)*10:
-            self.assertFalse(mouth.update(ratio))
-        mouth = MouthCycle(sensitivity=10)
-        self.assertEqual(sum(mouth.update(r) for r in (.025,.025,.025,.065,.065,.025,.025)), 1)
-        for ratio in (.025,.2,.2,.2,.2):
-            self.assertFalse(mouth.update(ratio))
-
-    def test_high_sensitivity_missing_sample_discards_partial_cycle(self):
-        mouth = MouthCycle(sensitivity=7)
-        self.assertEqual(sum(mouth.update(r) for r in (.025,.12,None,.025)), 0)
-        self.assertEqual(sum(mouth.update(r) for r in (.025,.025,.12,.12,.025,.025)), 1)
-
-    def test_calibrated_jitter_does_not_score_but_real_cycles_do(self):
-        samples = [.02,.025,.03]*20
-        mouth = MouthCycle.calibrated(samples, 10)
-        self.assertAlmostEqual(mouth.noise_span, .01)
-        self.assertGreater(mouth.targets[1], mouth.targets[0])
-        jitter = [.02,.02,.03,.03,.022,.022]*20
-        self.assertEqual(sum(mouth.update(r) for r in jitter), 0)
-        real_cycle = (.022,.022,.08,.08,.022,.022)
-        self.assertEqual(sum(mouth.update(r) for r in real_cycle), 1)
-
-    def test_single_frame_opening_and_return_are_counted_without_smoothing_delay(self):
-        mouth = MouthCycle(sensitivity=8, noise_span=.035)
-        self.assertEqual(sum(mouth.update(r) for r in (.025,.15,.025,.15,.025)), 2)
-
-    def test_closed_noise_and_open_mouth_jitter_do_not_make_cycles(self):
-        mouth = MouthCycle(.01,8,noise_span=.02)
-        closed = (.0,.035,.041,.025,.0)*20
-        self.assertEqual(sum(mouth.update(r) for r in closed),0)
-        mouth.update(.25)
-        self.assertEqual(sum(mouth.update(r) for r in (.27,.34,.28,.33,.27)*20),0)
-        self.assertTrue(mouth.update(.01))
-        self.assertEqual(sum(mouth.update(r) for r in (.3,.01)*10),10)
-
-    def test_higher_sensitivity_never_raises_the_opening_threshold(self):
-        for baseline in (.005,.025,.08):
-            for noise in (0.,.01,.04):
-                previous=float('inf')
-                for level in range(1,11):
-                    close, opening=MouthCycle(baseline,level,noise).targets
-                    self.assertLessEqual(opening,previous)
-                    self.assertLess(close,opening)
-                    previous=opening
+    def test_exact_thresholds_count_and_values_between_them_do_not(self):
+        mouth = MouthCycle()
+        self.assertFalse(mouth.update(.05))
+        self.assertFalse(mouth.update(.084))
+        self.assertFalse(mouth.update(.05))
+        self.assertFalse(mouth.update(.085))
+        self.assertFalse(mouth.update(.051))
+        self.assertTrue(mouth.update(.05))
+        self.assertFalse(mouth.update(.05))
 
     def test_holding_open_does_not_count(self):
         mouth = MouthCycle()
@@ -147,15 +101,12 @@ class RaceTests(unittest.TestCase):
         for ratio in (.025, .025, .3, .3, .025, .025):
             self.step({1: ratio, 2: ratio if both else .025})
 
-    def test_unstable_calibration_does_not_start_with_an_unreachable_threshold(self):
+    def test_preparation_samples_do_not_change_thresholds_or_delay_start(self):
+        self.race.set_sensitivity(8)
         for index in range(20):
-            self.step({1:.35 if index%5==4 else .025,2:.025})
-        self.assertEqual(self.race.state, 'ready')
-        self.assertIn('安定', self.race.reason)
-        for _ in range(60):
-            self.step()
-        self.assertEqual(self.race.state, 'playing')
-        self.assertLess(self.race.players[0].mouth.movement, .1)
+            self.step({1: .35 if index % 2 else .025, 2: .25})
+        self.assertEqual(self.race.state, 'countdown')
+        self.assertEqual([p.mouth.targets for p in self.race.players], [(.05, .08)] * 2)
 
     def test_two_large_faces_on_opposite_sides_are_required(self):
         for _ in range(30):

@@ -55,7 +55,7 @@ class GameVisuals:
             self.last_firework = now
             self.burst((w*self.rng.uniform(.15, .85), h*.25), GOLD, now, True)
         self.seen_state = race.state
-        statuses = {'waiting':'顔を映してね', 'ready':race.reason or '準備！　口を閉じて待ってね',
+        statuses = {'waiting':'顔を映してね', 'ready':race.reason or '準備！',
                     'playing':'', 'paused':'一時停止', 'result':'終了！'}
         status = race.countdown(now) if race.state == 'countdown' else statuses[race.state]
         if race.state == 'result' and not solo:
