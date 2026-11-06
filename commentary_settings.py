@@ -5,7 +5,12 @@ import threading
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_PROMPT = (ROOT/'commentary_prompt.txt').read_text()
+VOICE_RULES = (ROOT/'commentary_rules.txt').read_text().strip()
 DEFAULT_VOICE = 'cove'
+
+
+def session_prompt(style):
+    return f'{VOICE_RULES}\n\n# 演出設定（上の発話ルールの範囲で適用）\n{style.strip()}'
 
 
 class CommentarySettings:

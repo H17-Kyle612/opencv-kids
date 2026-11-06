@@ -11,6 +11,15 @@ def game_context(race, active=True):
             'winners': [i+1 for i in race.winners] if active and race.state == 'result' else []}
 
 
+def finish_phrase(context):
+    if context['mode'] == 'solo':
+        return 'チャレンジ終了！おつかれさまでした！！'
+    winners = context['winners']
+    if len(winners) == 1:
+        return f'プレイヤー{winners[0]}の勝ち！おめでとう！！'
+    return '引き分け！ふたりともおつかれさま！！'
+
+
 def leaders(bites):
     if len(bites) != 2:
         return []
@@ -90,7 +99,9 @@ class MatchStory:
             # 単発の口数よりも、おかわり・逆転など競技上の展開を優先する。
             if events:
                 self.last_event = now
-            react = changed or (now-self.last_reaction >= 1.2 and self.last_event > self.last_reaction) or now-self.last_reaction >= 3.5
+            scored = old is None or context['bites'] != old['bites']
+            react = (changed or (now-self.last_reaction >= 1.2 and self.last_event > self.last_reaction)
+                     or (scored and now-self.last_reaction >= 3.5))
         else:
             react = context['state'] == 'result' and (old is None or old['match'] != self.match or old['state'] != 'result')
             if react:

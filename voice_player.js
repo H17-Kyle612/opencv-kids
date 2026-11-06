@@ -11,7 +11,7 @@ async function get(path){const r=await fetch(path);const body=await r.json();if(
 async function post(path,body={}){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw Error(data.error||'接続に失敗しました');return data;}
 function cleanup(){
  completed=true;channel?.close();peer?.close();oscillator?.stop();context?.close();
- peer=channel=context=oscillator=analyser=signal=null;activity=new SpeechActivity();previousStats=null;audio.srcObject=null;
+ peer=channel=context=oscillator=analyser=signal=null;activity=new SpeechActivity();previousStats=null;audio.srcObject=null;audio.hidden=true;
  start.disabled=connecting||!defaults;stop.disabled=true;
 }
 async function connect(){
@@ -28,7 +28,10 @@ async function connect(){
    for(const [name,type] of [['mute','audio_track_muted'],['unmute','audio_track_unmuted'],['ended','audio_track_ended']])
     event.track.addEventListener(name,()=>{if(peer===connection)post('playback',{type,at:new Date().toISOString()}).catch(()=>{});});
    const stream=new MediaStream([event.track]);audio.srcObject=stream;
-   audio.play().catch(()=>status.textContent='再生ボタンを押してください');
+   audio.play().catch(()=>{
+    if(peer!==connection)return;
+    audio.hidden=false;status.textContent='再生ボタンを押してください';
+   });
    const source=context.createMediaStreamSource(stream);analyser=context.createAnalyser();analyser.fftSize=2048;
    signal=new Float32Array(analyser.fftSize);source.connect(analyser);
   };
@@ -71,7 +74,7 @@ apply.onclick=async()=>{
  }catch(error){$('settingsStatus').textContent=error.message;}
  finally{apply.disabled=false;}
 };
-reset.onclick=()=>{editor.value=defaults.default_prompt;voice.value=defaults.default_voice;$('settingsStatus').textContent='標準文を入力しました。「保存して反映」で適用します。';};
+reset.onclick=()=>{editor.value=defaults.default_prompt;$('settingsStatus').textContent='標準文を入力しました。「保存して反映」で適用します。';};
 editor.oninput=voice.onchange=()=>{$('settingsStatus').textContent='未保存の変更があります。「保存して反映」を押してください。';};
 async function loadSettings(){
  try{
@@ -91,6 +94,7 @@ function renderDebug(s){
  const active=s.active_settings;
  $('activeSettings').textContent=active?`適用中：声 ${active.voice} ／ 設定 #${active.revision}`:'実況は未接続';
  $('prompt').textContent=active?`要求モデル：${defaults?.requested_model||defaults?.model||'App Serverの設定・既定値に従う'}\n実モデル：未取得（App Server応答に識別情報なし）\n声：${active.voice}\n\n${active.prompt}`:'まだ実況に適用されていません。上の入力欄は保存する設定です。';
+ if(!$('diagnostics').open)return;
  const d=s.debug;
  if(d.current){$('current').textContent=json(d.current.context);$('captured').textContent='取得 '+fmt(d.current.at);}
  const sent=d.sent.at(-1);

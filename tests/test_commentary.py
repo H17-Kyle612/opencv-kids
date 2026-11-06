@@ -32,6 +32,7 @@ def commentator():
     voice.pending = queue.Queue(maxsize=1)
     voice.last_request = 0.
     voice.previous_state = None
+    voice.finished_match = None
     return voice
 
 
@@ -78,12 +79,32 @@ class CommentaryTests(unittest.TestCase):
     def test_sent_json_contains_latest_scores_without_a_second_background_route(self):
         context, _ = MatchStory().observe(race(), 100.)
         params = CodexClient.context_params('thread', context)
-        facts = json.loads(params['text'])
+        facts = json.loads(params['text'].split('\n', 1)[1])
         self.assertEqual(params['role'], 'user')
+        self.assertTrue(params['text'].startswith('日本語の超早口'))
         self.assertEqual(facts['bites'], context['bites'])
         self.assertEqual(facts['events'], context['events'])
         self.assertTrue(facts['close_race'])
         self.assertTrue({'match', 'event_id', 'priority', 'react'}.isdisjoint(facts))
+
+    def test_each_finish_sends_only_its_fixed_line_to_live_once(self):
+        voice = commentator()
+        client = Mock(thread_id='thread', context_params=CodexClient.context_params)
+        for match, (mode, winners, phrase) in enumerate((
+            ('versus', [1], 'プレイヤー1の勝ち！おめでとう！！'),
+            ('versus', [2], 'プレイヤー2の勝ち！おめでとう！！'),
+            ('versus', [1, 2], '引き分け！ふたりともおつかれさま！！'),
+            ('solo', [], 'チャレンジ終了！おつかれさまでした！！'),
+        )):
+            packet = {'context': {'state': 'result', 'match': match, 'mode': mode, 'winners': winners},
+                      'at': 'capture', 'monotonic': time.monotonic()}
+            with self.subTest(phrase=phrase):
+                client.reset_mock()
+                voice._narrate(client, packet)
+                voice._narrate(client, packet)
+                client.append_context.assert_called_once()
+                text = client.append_context.call_args.args[0]['text']
+                self.assertEqual(text.splitlines()[1], f'「{phrase}」')
 
     def test_disabled_game_sends_waiting_without_winner(self):
         self.assertEqual(game_context(race('result'), False)['state'], 'waiting')
@@ -125,7 +146,17 @@ class MatchStoryTests(unittest.TestCase):
         client = CodexClient.__new__(CodexClient)
         params = client.context_params('thread', context)
         self.assertFalse(CommentaryDebug().should_send(context))
-        self.assertEqual(json.loads(params['text'])['bites'], context['bites'])
+        self.assertEqual(json.loads(params['text'].split('\n', 1)[1])['bites'], context['bites'])
+
+    def test_unchanged_play_is_quiet_but_a_new_score_can_trigger_a_call(self):
+        story = MatchStory()
+        game = race()
+        story.observe(game, 0.)
+        unchanged, _ = story.observe(game, 4.)
+        self.assertFalse(unchanged['react'])
+        game.players[0].hits += 1
+        scored, _ = story.observe(game, 4.5)
+        self.assertTrue(scored['react'])
 
     def test_result_waits_until_idle_then_requests_one_closing_sentence(self):
         story = MatchStory()
@@ -364,6 +395,8 @@ class AppServerVoiceTests(unittest.TestCase):
         self.assertIn('ケーキにちなんだ洒落を交えて実況。', params['prompt'])
         self.assertIn('バックエンド', params['prompt'])
         self.assertIn('接戦だーーーっ！', params['prompt'])
+        self.assertIn('もう一回行く？', params['prompt'])
+        self.assertIn('発話は常に日本語のみ', params['prompt'])
         self.assertEqual(params['voice'],'miko')
         self.assertNotIn('bites', params['initialItems'][0]['text'])
         self.assertIn('無言', params['initialItems'][0]['text'])

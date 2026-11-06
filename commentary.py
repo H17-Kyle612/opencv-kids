@@ -7,8 +7,8 @@ import secrets
 import time
 import threading
 import webbrowser
-from codex_client import CodexClient, REQUESTED_MODEL, session_prompt
-from commentary_settings import CommentarySettings, DEFAULT_PROMPT, DEFAULT_VOICE
+from codex_client import CodexClient, REQUESTED_MODEL
+from commentary_settings import CommentarySettings, DEFAULT_PROMPT, DEFAULT_VOICE, session_prompt
 from commentary_context import MatchStory, leaders
 from commentary_debug import CommentaryDebug, timestamp
 
@@ -38,6 +38,7 @@ class Commentator:
         self.story = MatchStory()
         self.debug = CommentaryDebug()
         self.last_transcript_at = 0.
+        self.finished_match = None
         self.pending = queue.Queue(maxsize=1)
         self.commands = queue.Queue(maxsize=2)
         self.stopped = threading.Event()
@@ -205,14 +206,7 @@ class Commentator:
                                 # キューに滞留した途中経過は読み上げず、次の最新更新を待つ。
                                 if ((time.monotonic()-context['monotonic'] < 1. or context['context']['state'] != 'playing')
                                         and self.debug.should_send(context['context'])):
-                                    params = client.context_params(client.thread_id, context['context'])
-                                    entry, started = self.debug.sending(context, params)
-                                    try:
-                                        client.append_context(params)
-                                    except Exception as error:
-                                        self.debug.acknowledge(entry, started, error)
-                                        raise
-                                    self.debug.acknowledge(entry, started)
+                                    self._narrate(client, context)
                         message = client.events.popleft() if client.events else client._read(.05)
                         if message:
                             method, data = message.get('method'), message.get('params', {})
@@ -239,6 +233,22 @@ class Commentator:
         finally:
             if client:
                 client.close()
+
+    def _narrate(self, client, packet):
+        context = packet['context']
+        is_result = context['state'] == 'result'
+        if is_result and context['match'] == self.finished_match:
+            return
+        params = client.context_params(client.thread_id, context)
+        entry, started = self.debug.sending(packet, params)
+        try:
+            client.append_context(params)
+        except Exception as error:
+            self.debug.acknowledge(entry, started, error)
+            raise
+        self.debug.acknowledge(entry, started)
+        if is_result:
+            self.finished_match = context['match']
 
     def _failure(self, error):
         self.ready.clear()
