@@ -120,7 +120,7 @@ def main():
                 started = time.perf_counter()
                 ratios = estimator.estimate(frame, mouth_tracks)
                 mouth_ms = (time.perf_counter()-started)*1000
-                race.update(visible, ratios, frame.shape[1], now, directions=estimator.directions)
+                race.update(visible, ratios, frame.shape[1], now)
                 if race.state != last_game_state or race.events:
                     print(f'GAME {race.state} | bites={[p.hits for p in race.players]} | time={race.elapsed:.2f}', flush=True)
                     last_game_state = race.state
@@ -135,7 +135,7 @@ def main():
             display = frame.copy() if debug or guides or args.mouth_debug or (hud and not game_enabled) else frame
             draw_guides(display, visible, estimator.points if (debug or args.mouth_debug) and game_enabled else {}, ratios, guides or debug, labels=not debug)
             if debug:
-                draw_debug(display, race, ratios, estimator.errors, fps, camera_fps, face_ms, mouth_ms, args.detect_width, capture_ms, render_ms, display_ms, estimator.motion.details)
+                draw_debug(display, race, ratios, estimator.errors, fps, camera_fps, face_ms, mouth_ms, args.detect_width, capture_ms, render_ms, display_ms)
 
             if hud and not game_enabled:
                 # 頭上の星や帽子を隠さないよう、操作説明は画面下に置く。
@@ -153,7 +153,7 @@ def main():
             key = cv2.waitKeyEx(1)
             display_ms = (time.perf_counter()-started)*1000
             if trace:
-                trace.write(race, ratios, now, fps, camera_fps, capture_ms, face_ms, mouth_ms, render_ms, display_ms, estimator.motion.details)
+                trace.write(race, ratios, now, fps, camera_fps, capture_ms, face_ms, mouth_ms, render_ms, display_ms)
             if key in (27, ord('q'), ord('Q')):
                 break
             if key == 32:

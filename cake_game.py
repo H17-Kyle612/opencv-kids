@@ -2,38 +2,26 @@
 from dataclasses import dataclass, field
 import math
 
-from statistics import median
-
-SENSITIVITY_SCALES = (1., .85, .7, .55, .4, .32, .26, .21, .17, .14)
-MAX_SENSITIVITY = len(SENSITIVITY_SCALES)
+MAX_SENSITIVITY = 10
 DEFAULT_SENSITIVITY = 7
 
 
 class MouthCycle:
-    """開いて戻す動きを1口とする。待機時間は設けず、校正した閉口の許容範囲への復帰を確認する。"""
-    def __init__(self, baseline=.025, sensitivity=DEFAULT_SENSITIVITY, noise_span=0.):
+    """固定した開度で閉じる→開く→閉じるの1往復を数える。"""
+    def __init__(self, sensitivity=DEFAULT_SENSITIVITY):
         if sensitivity not in range(1, MAX_SENSITIVITY+1):
             raise ValueError(f"sensitivityは1〜{MAX_SENSITIVITY}です")
         self.sensitivity = sensitivity
-        self.baseline = baseline
-        self.noise_span = noise_span
         self.reset()
 
     def reset(self):
         self.armed = False
         self.opened = False
-        self.filtered_ratio = None
-
-    @property
-    def movement(self):
-        close, opening = self.targets
-        return opening-close
 
     @property
     def targets(self):
-        scale = SENSITIVITY_SCALES[self.sensitivity-1]
-        closing = self.baseline + max(.01, self.noise_span)
-        opening = max(.1-.005*self.sensitivity, closing+max(.01,.07*scale))
+        closing = .05
+        opening = (120 - 5 * self.sensitivity) / 1000
         return closing, opening
 
     @property
@@ -42,37 +30,26 @@ class MouthCycle:
             return "戻り待ち"
         return "開き待ち" if self.armed else "閉じ待ち"
 
-    @classmethod
-    def calibrated(cls, samples, sensitivity):
-        ordered = sorted(samples)
-        low, high = (len(ordered)-1)//10, (len(ordered)-1)*9//10
-        return cls(float(median(ordered)), sensitivity, ordered[high]-ordered[low])
-
-    def update(self, ratio, direction=None):
+    def update(self, ratio):
         if ratio is None or not math.isfinite(ratio):
             self.reset()
             return False
-        self.filtered_ratio = ratio
         close, opening = self.targets
         if ratio <= close:
-            if self.opened and direction is not None and direction>=0:
-                return False
             bite = self.opened
             self.opened = False
             self.armed = True
             return bite
-        if ratio >= opening and self.armed and (direction is None or direction>0):
+        if ratio >= opening and self.armed:
             self.opened = True
             self.armed = False
         return False
-
 
 
 @dataclass
 class Player:
     track_id: int
     hits: int = 0
-    samples: list = field(default_factory=list)
     mouth: MouthCycle = field(default_factory=MouthCycle)
     last_bite: float = -math.inf
 
@@ -133,7 +110,7 @@ class CakeRace:
             return [t for t in tracks if t.number in wanted]
         return self.candidates(tracks, width)
 
-    def update(self, tracks, ratios, width, now, directions=None):
+    def update(self, tracks, ratios, width, now):
         self.events = []
         dt = 0. if self.previous is None else max(now - self.previous, 0.)
         self.previous = now
@@ -150,25 +127,10 @@ class CakeRace:
                 return
             # 顔の大きさ・場所・口の推定が安定してから、同じ参加者で開始。
             if [p.track_id for p in self.players] != ids:
-                self.players = [Player(i) for i in ids]
+                self.players = [Player(i, mouth=MouthCycle(self.sensitivity)) for i in ids]
                 self.ready_since = now
             self.state = 'ready'
-            for player in self.players:
-                ratio = ratios[player.track_id]
-                player.samples.append(ratio)
-                player.samples = player.samples[-90:]
             if now - self.ready_since >= 1.5:
-                calibrated = [MouthCycle.calibrated(p.samples, self.sensitivity) for p in self.players]
-                # 口の動きや推定崩れを、大きなノイズとして学習したまま開始しない。
-                if any(m.baseline>.14 or m.noise_span>.05 for m in calibrated):
-                    self.reason = '準備：口を閉じて安定させてね'
-                    self.ready_since = now
-                    for player, mouth in zip(self.players, calibrated):
-                        player.mouth = mouth
-                        player.samples.clear()
-                    return
-                for player, mouth in zip(self.players, calibrated):
-                    player.mouth = mouth
                 self.reason = ''
                 self.state = 'countdown'
                 self.countdown_since = now
@@ -209,7 +171,7 @@ class CakeRace:
                 self.reason = '時間終了！'
                 return
             for i, player in enumerate(self.players):
-                if player.mouth.update(ratios[player.track_id], None if directions is None else directions.get(player.track_id,0)):
+                if player.mouth.update(ratios[player.track_id]):
                     player.hits += 1
                     player.last_bite = now
                     self.events.append(i)
