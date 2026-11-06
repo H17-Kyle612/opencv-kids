@@ -1,5 +1,7 @@
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock, patch
 from cake_chomp.audio import SoundEffects
 
 
@@ -31,6 +33,18 @@ class SoundEventTests(unittest.TestCase):
         sound.update(self.race(events=(0, 1)), 0.)
         sound.update(self.race(events=(0, 1), hits=(4, 3)), .1)
         self.assertEqual(sound.played, ['bite_both', 'cake'])
+
+    def test_windows_plays_the_same_wav_asynchronously_and_stops_on_close(self):
+        windows = Mock(SND_FILENAME=1, SND_ASYNC=2, SND_NODEFAULT=4)
+        with patch('cake_chomp.audio.sys.platform', 'win32'), patch.dict('sys.modules', winsound=windows):
+            sound = SoundEffects()
+        sound.update(self.race(state='result'), 0.)
+        path, flags = windows.PlaySound.call_args.args
+        self.assertEqual(Path(path).name, 'finish.wav')
+        self.assertTrue(Path(path).is_file())
+        self.assertEqual(flags, 7)
+        sound.close()
+        windows.PlaySound.assert_called_with(None, 0)
 
     def test_finish_plays_once(self):
         sound = RecordedSounds()

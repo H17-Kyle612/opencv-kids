@@ -2,11 +2,11 @@
 from collections import deque
 from contextlib import ExitStack
 import json
-import os
-import select
+from queue import Empty, SimpleQueue
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 
 from commentary_context import finish_phrase
@@ -19,7 +19,7 @@ REQUESTED_MODEL = None
 
 class CodexClient:
     def __init__(self, on_process=None):
-        executable = shutil.which('codex')
+        executable = shutil.which('codex.exe') or shutil.which('codex')
         if not executable:
             raise RuntimeError('Codex CLIがありません。実況にはcodex app-serverが必要です。')
         self.folder = tempfile.TemporaryDirectory(prefix='cake-commentary-')
@@ -27,13 +27,14 @@ class CodexClient:
             startup.callback(self.folder.cleanup)
             self.process = subprocess.Popen([executable, 'app-server', '--stdio'], cwd=self.folder.name,
                                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                            stderr=subprocess.DEVNULL, bufsize=0)
+                                            stderr=subprocess.DEVNULL)
+            self.reader = None
             startup.callback(self._close_process)
             if on_process:
                 on_process(self.process)
-            os.set_blocking(self.process.stdout.fileno(), False)
-            self.buffer = b''
-            self.wire = deque()
+            self.wire = SimpleQueue()
+            self.reader = threading.Thread(target=self._read_stdout, daemon=True, name='codex-stdout')
+            self.reader.start()
             self.events = deque()
             self.sequence = 0
             self.thread_id = None
@@ -54,23 +55,24 @@ class CodexClient:
         self.process.stdin.write((json.dumps(message, ensure_ascii=False)+'\n').encode())
         self.process.stdin.flush()
 
+    def _read_stdout(self):
+        # Windowsのselectはソケット専用。標準出力は専用スレッドで読む。
+        try:
+            with self.process.stdout as stream:
+                for line in stream:
+                    if line.strip():
+                        self.wire.put(line)
+        finally:
+            self.wire.put(None)
+
     def _read(self, timeout):
-        deadline = time.monotonic()+timeout
-        while not self.wire:
-            remaining = deadline-time.monotonic()
-            if remaining <= 0:
-                return None
-            if not select.select([self.process.stdout], [], [], remaining)[0]:
-                return None
-            chunk = os.read(self.process.stdout.fileno(), 65536)
-            if not chunk:
-                raise RuntimeError('Codex App Serverとの接続が終了しました')
-            self.buffer += chunk
-            while b'\n' in self.buffer:
-                line, self.buffer = self.buffer.split(b'\n', 1)
-                if line.strip():
-                    self.wire.append(json.loads(line))
-        return self.wire.popleft()
+        try:
+            line = self.wire.get(timeout=timeout)
+        except Empty:
+            return None
+        if line is None:
+            raise RuntimeError('Codex App Serverとの接続が終了しました')
+        return json.loads(line)
 
     def rpc(self, method, params, timeout=20.):
         self.sequence += 1
@@ -142,6 +144,7 @@ class CodexClient:
         self.rpc('thread/realtime/appendText', params, timeout=5)
 
     def _close_process(self):
+        self.process.stdin.close()
         if self.process.poll() is None:
             self.process.terminate()
             try:
@@ -149,8 +152,12 @@ class CodexClient:
             except subprocess.TimeoutExpired:
                 self.process.kill()
                 self.process.wait(timeout=2)
-        for stream in (self.process.stdin, self.process.stdout):
-            stream.close()
+        if self.reader is None:
+            self.process.stdout.close()
+        elif self.reader.ident is not None:
+            self.reader.join(timeout=1.)
+        else:
+            self.process.stdout.close()
 
     def close(self):
         try:

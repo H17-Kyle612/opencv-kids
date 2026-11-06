@@ -1,5 +1,7 @@
 from collections import deque
 import queue
+import subprocess
+import sys
 import json
 import unittest
 from unittest.mock import Mock
@@ -403,6 +405,20 @@ class AppServerVoiceTests(unittest.TestCase):
         client.rpc = Mock(return_value={})
         client.events = deque([event])
         return client
+
+    def test_reads_unicode_json_lines_from_a_subprocess_and_detects_eof(self):
+        client = CodexClient.__new__(CodexClient)
+        body = json.dumps({'text': '実況'}, ensure_ascii=False).encode()
+        script = f'import sys; sys.stdout.buffer.write({body!r} + bytes([13, 10, 10]))'
+        client.process = subprocess.Popen([sys.executable, '-c', script],
+                                          stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        client.wire = queue.SimpleQueue()
+        client.reader = threading.Thread(target=client._read_stdout)
+        self.addCleanup(client._close_process)
+        client.reader.start()
+        self.assertEqual(client._read(5.), {'text': '実況'})
+        with self.assertRaisesRegex(RuntimeError, '接続が終了'):
+            client._read(5.)
 
     def test_live_model_uses_app_server_webrtc(self):
         client = self.client({'method':'thread/realtime/sdp', 'params':{'sdp':'answer'}})
