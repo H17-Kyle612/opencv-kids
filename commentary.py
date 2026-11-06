@@ -208,7 +208,7 @@ class Commentator:
                                     params = client.context_params(client.thread_id, context['context'])
                                     entry, started = self.debug.sending(context, params)
                                     try:
-                                        client.append_context(context['context'])
+                                        client.append_context(params)
                                     except Exception as error:
                                         self.debug.acknowledge(entry, started, error)
                                         raise

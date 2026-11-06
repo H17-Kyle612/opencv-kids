@@ -74,6 +74,10 @@ class CakeRace:
             player.mouth.sensitivity = sensitivity
             player.mouth.reset()
 
+    @property
+    def remaining(self):
+        return max(0., self.time_limit - self.elapsed)
+
     def set_player_count(self, player_count):
         if player_count not in (1, 2):
             raise ValueError('player_countは1または2です')
@@ -116,7 +120,6 @@ class CakeRace:
         self.events = []
         dt = 0. if self.previous is None else max(now - self.previous, 0.)
         self.previous = now
-        by_id = {t.number: t for t in tracks}
         if self.state == 'result':
             return
         if self.state in ('waiting', 'ready'):
@@ -135,9 +138,9 @@ class CakeRace:
             if now - self.ready_since >= 1.5:
                 self.reason = ''
                 self.match_min_face = self.min_face
-                self.state = 'countdown'
-                self.countdown_since = now
+                self._start_countdown(now)
             return
+        by_id = {t.number: t for t in tracks}
         present = all(p.track_id in by_id and ratios.get(p.track_id) is not None and
                       by_id[p.track_id].face[2] >= self.match_min_face * .75 for p in self.players)
         if not present:
@@ -155,8 +158,7 @@ class CakeRace:
             if self.resume_since is None:
                 self.resume_since = now
             if now - self.resume_since >= .8:
-                self.state = 'countdown'
-                self.countdown_since = now
+                self._start_countdown(now)
             return
         if self.state == 'countdown':
             # カウントダウン中は何回口を動かしても得点にならない。
@@ -175,9 +177,17 @@ class CakeRace:
                 return
             for i, player in enumerate(self.players):
                 if player.mouth.update(ratios[player.track_id]):
-                    player.hits += 1
-                    player.last_bite = now
-                    self.events.append(i)
+                    self.record_bite(i, now)
+
+    def _start_countdown(self, now):
+        self.state = 'countdown'
+        self.countdown_since = now
+
+    def record_bite(self, index, now):
+        player = self.players[index]
+        player.hits += 1
+        player.last_bite = now
+        self.events.append(index)
 
     @property
     def winner_track_id(self):

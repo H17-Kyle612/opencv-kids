@@ -15,7 +15,8 @@ SIZE, CELL, COLUMNS = 96, 128, 16
 
 def main():
     characters = set(string.printable.strip())
-    for path in ROOT.glob('*.py'):
+    modules = (path for folder in (ROOT, ROOT/'costume', ROOT/'cake_chomp') for path in folder.glob('*.py'))
+    for path in modules:
         for node in ast.walk(ast.parse(path.read_text())):
             if isinstance(node, ast.Constant) and isinstance(node.value, str):
                 characters.update(c for c in node.value if c.isprintable() or c == '\u3000')

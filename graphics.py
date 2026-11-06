@@ -99,7 +99,7 @@ def _tint_mask(frame, mask, x, y, color):
     target[:] = (target*(1-alpha)+np.asarray(color, dtype=np.float32)*alpha).astype(np.uint8)
 
 
-def text(frame, label, center, size=1., color=(255, 255, 255), thickness=2):
+def text(frame, label, center, size=1., color=(255, 255, 255)):
     mask = _text_mask(str(label), max(10, round(size*38)))
     x, y = int(center[0]-mask.shape[1]/2), int(center[1]-mask.shape[0]/2)
     outline = cv2.dilate(mask, np.ones((3, 3), np.uint8))

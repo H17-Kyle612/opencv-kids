@@ -1,6 +1,6 @@
 import unittest
 from types import SimpleNamespace
-from audio import SoundEffects
+from cake_chomp.audio import SoundEffects
 
 
 class RecordedSounds(SoundEffects):
@@ -15,7 +15,7 @@ class RecordedSounds(SoundEffects):
 
 class SoundEventTests(unittest.TestCase):
     def race(self, state='playing', events=(), hits=(1, 1), elapsed=0.):
-        return SimpleNamespace(state=state, events=list(events), time_limit=30., elapsed=elapsed,
+        return SimpleNamespace(state=state, events=list(events), remaining=30.-elapsed,
                                bites_per_cake=4, players=[SimpleNamespace(hits=n) for n in hits],
                                countdown=lambda now: 3-int(now))
 

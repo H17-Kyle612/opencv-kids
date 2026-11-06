@@ -3,8 +3,8 @@ import queue
 import json
 import unittest
 from unittest.mock import Mock
+from cake_chomp.rules import CakeRace, Player
 from codex_client import CodexClient
-from types import SimpleNamespace
 from commentary import Commentator
 from commentary_context import MatchStory, game_context
 from commentary_debug import CommentaryDebug
@@ -16,9 +16,12 @@ from commentary_settings import CommentarySettings
 
 
 def race(state='playing'):
-    return SimpleNamespace(state=state, player_count=2, time_limit=30., elapsed=10., bites_per_cake=4,
-                           players=[SimpleNamespace(track_id=1, hits=8), SimpleNamespace(track_id=2, hits=9)],
-                           winners=[1] if state == 'result' else [])
+    game = CakeRace()
+    game.state = state
+    game.elapsed = 10.
+    game.players = [Player(1, hits=8), Player(2, hits=9)]
+    game.winners = [1] if state == 'result' else []
+    return game
 
 
 def commentator():
@@ -374,7 +377,7 @@ class AppServerVoiceTests(unittest.TestCase):
 
     def test_game_updates_stay_in_realtime_session(self):
         client = self.client({})
-        client.append_context(game_context(race()))
+        client.append_context(client.context_params(client.thread_id, game_context(race())))
         self.assertEqual(client.rpc.call_args.args[0], 'thread/realtime/appendText')
         self.assertIn('remaining_seconds', client.rpc.call_args.args[1]['text'])
 

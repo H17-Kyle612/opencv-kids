@@ -1,5 +1,6 @@
 """Codex App Serverのstdio接続。実況専用の一時スレッドを使用する。"""
 from collections import deque
+from contextlib import ExitStack
 import json
 import os
 import select
@@ -39,18 +40,20 @@ class CodexClient:
         if not executable:
             raise RuntimeError('Codex CLIがありません。実況にはcodex app-serverが必要です。')
         self.folder = tempfile.TemporaryDirectory(prefix='cake-commentary-')
-        self.process = subprocess.Popen([executable, 'app-server', '--stdio'], cwd=self.folder.name,
-                                        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                        stderr=subprocess.DEVNULL, bufsize=0)
-        if on_process:
-            on_process(self.process)
-        os.set_blocking(self.process.stdout.fileno(), False)
-        self.buffer = b''
-        self.wire = deque()
-        self.events = deque()
-        self.sequence = 0
-        self.thread_id = None
-        try:
+        with ExitStack() as startup:
+            startup.callback(self.folder.cleanup)
+            self.process = subprocess.Popen([executable, 'app-server', '--stdio'], cwd=self.folder.name,
+                                            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                            stderr=subprocess.DEVNULL, bufsize=0)
+            startup.callback(self._close_process)
+            if on_process:
+                on_process(self.process)
+            os.set_blocking(self.process.stdout.fileno(), False)
+            self.buffer = b''
+            self.wire = deque()
+            self.events = deque()
+            self.sequence = 0
+            self.thread_id = None
             self.rpc('initialize', {'clientInfo': {'name':'cake_chomp_commentary', 'title':'ケーキぱくぱく実況', 'version':'0.1.0'},
                                     'capabilities': {'experimentalApi': True}})
             self.send({'method':'initialized'})
@@ -62,9 +65,7 @@ class CodexClient:
                                                'approvalPolicy':'never', 'sandbox':'read-only',
                                                'baseInstructions':PROMPT})
             self.thread_id = result['thread']['id']
-        except Exception:
-            self.close()
-            raise
+            startup.pop_all()
 
     def send(self, message):
         self.process.stdin.write((json.dumps(message, ensure_ascii=False)+'\n').encode())
@@ -138,12 +139,10 @@ class CodexClient:
         return {'threadId':thread_id, 'role':'user',
                 'text':json.dumps(facts, ensure_ascii=False, separators=(',', ':'))}
 
-    def append_context(self, context):
-        params = self.context_params(self.thread_id, context)
+    def append_context(self, params):
         self.rpc('thread/realtime/appendText', params, timeout=5)
-        return params
 
-    def close(self):
+    def _close_process(self):
         if self.process.poll() is None:
             self.process.terminate()
             try:
@@ -153,4 +152,9 @@ class CodexClient:
                 self.process.wait(timeout=2)
         for stream in (self.process.stdin, self.process.stdout):
             stream.close()
-        self.folder.cleanup()
+
+    def close(self):
+        try:
+            self._close_process()
+        finally:
+            self.folder.cleanup()

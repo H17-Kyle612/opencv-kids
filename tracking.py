@@ -1,31 +1,12 @@
-"""顔の短期追跡と変身の割り当て。"""
+"""顔の位置に基づく短期追跡。"""
 from dataclasses import dataclass
 import math
-import random
 import numpy as np
-
-HEADS = ('santa', 'antlers', 'star', 'gift', 'cross', 'none')
-LOOKS = (('santa', 'none', 'beard'), ('antlers', 'red', 'none'),
-         ('star', 'none', 'none'), ('gift', 'red', 'none'),
-         ('cross', 'none', 'none'), ('none', 'none', 'wreath'))
-NOSES = ('red', 'none')
-
-
-def costume(rng):
-    # 頭の素材は一つずつ。鼻と顔周りは独立して抽選。
-    head = rng.choice(HEADS)
-    nose = rng.choice(NOSES)
-    surround = rng.choice(('beard', 'wreath', 'none'))
-    if head == 'none' and nose == 'none' and surround == 'none':
-        head = 'santa'
-    return head, nose, surround
-
 
 @dataclass
 class Track:
     number: int
     face: np.ndarray
-    outfit: tuple
     seen: float
 
 
@@ -38,22 +19,10 @@ def iou(a, b):
 
 class Tracker:
     """位置による短期追跡。個人の顔を照合・登録する処理は行わない。"""
-    def __init__(self, seed=None, ttl=1.2):
-        self.rng = random.Random(seed)
+    def __init__(self, ttl=1.2):
         self.ttl = ttl
         self.tracks = {}
         self.next_id = 1
-        self.fixed_outfit = None
-
-    def shuffle(self):
-        self.fixed_outfit = None
-        for track in self.tracks.values():
-            track.outfit = costume(self.rng)
-
-    def choose(self, outfit):
-        self.fixed_outfit = outfit
-        for track in self.tracks.values():
-            track.outfit = outfit
 
     def update(self, faces, now):
         self.tracks = {k: t for k, t in self.tracks.items() if now - t.seen <= self.ttl}
@@ -83,7 +52,7 @@ class Tracker:
             used_tracks.add(key)
         for index, face in enumerate(faces):
             if index not in used_faces:
-                track = Track(self.next_id, face.copy(), self.fixed_outfit or costume(self.rng), now)
+                track = Track(self.next_id, face.copy(), now)
                 self.tracks[track.number] = track
                 self.next_id += 1
                 visible.append(track)

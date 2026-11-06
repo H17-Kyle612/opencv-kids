@@ -5,7 +5,7 @@ from collections import deque
 def game_context(race, active=True):
     return {'mode': 'solo' if race.player_count == 1 else 'versus',
             'state': race.state if active else 'waiting',
-            'remaining_seconds': round(max(0, race.time_limit-race.elapsed), 1),
+            'remaining_seconds': round(race.remaining, 1),
             'bites': [p.hits for p in race.players],
             'cakes': [p.hits/race.bites_per_cake for p in race.players],
             'winners': [i+1 for i in race.winners] if active and race.state == 'result' else []}
@@ -110,7 +110,6 @@ class MatchStory:
         # 発話中の終了は保留し、無言になった時点で一度だけ送る。
         if react:
             self.announced = context.copy()
-        if react:
             self.last_reaction = now
         self.previous = {'identity':identity, 'elapsed':elapsed, 'state':context['state'], 'context':context.copy()}
         return context, changed

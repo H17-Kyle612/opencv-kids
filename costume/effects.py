@@ -2,11 +2,11 @@
 import math
 import cv2
 import numpy as np
-from tracking import HEADS
+from .outfits import HEADS
 from graphics import load_rgba
 from pathlib import Path
 
-ASSETS = Path(__file__).resolve().parent / 'assets' / 'generated'
+ASSETS = Path(__file__).resolve().parents[1] / 'assets' / 'generated'
 
 HEAD_ACCESSORIES = (*HEADS, 'crown')
 CROWN_GLOW_CENTER_Y = 185
@@ -180,20 +180,17 @@ class Snow:
         cv2.addWeighted(layer, .65, frame, .35, 0, dst=frame)
 
 
-def render(frame, tracks, sprites, now, head_offset=0., winner_id=None):
-    for track in sorted(tracks, key=lambda t: t.face[2]):
-        head, nose, surround = track.outfit
-        if track.number == winner_id:
-            head = 'crown'
-        for name in (surround, head, nose):
-            if name == 'none':
-                continue
-            sprite = sprites[name]
-            if name in ('star', 'crown'):
-                key = f'_{name}_frames'
-                if key not in sprites:
-                    animate = crown_animation if name == 'crown' else star_animation
-                    sprites[key] = animate(sprite)
-                frames = sprites[key]
-                sprite = frames[int((now + track.number * .31) * GLOW_FPS) % len(frames)]
-            composite(frame, sprite, track.face, name=name, head_offset=head_offset)
+def draw_outfit(frame, track, outfit, sprites, now, head_offset=0.):
+    head, nose, surround = outfit
+    for name in (surround, head, nose):
+        if name == 'none':
+            continue
+        sprite = sprites[name]
+        if name in ('star', 'crown'):
+            key = f'_{name}_frames'
+            if key not in sprites:
+                animate = crown_animation if name == 'crown' else star_animation
+                sprites[key] = animate(sprite)
+            frames = sprites[key]
+            sprite = frames[int((now + track.number * .31) * GLOW_FPS) % len(frames)]
+        composite(frame, sprite, track.face, name=name, head_offset=head_offset)

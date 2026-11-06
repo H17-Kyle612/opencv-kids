@@ -192,14 +192,12 @@ LBFの内側の唇3組について、口の向きに沿った上下の差を取�
 ## 実装の分担
 
 - `christmas_camera.py`：既存コマンドのエントリーポイント
-- `main.py`：起動・入力・処理順の制御
-- `cake_game.py`：開始条件・口の開閉カウント・時間制・勝敗。推論や描画には依存しません
-- `vision.py`：YuNetとFacemark LBFによる推論
-- `tracking.py`：顔の短期追跡と変身の割り当て
-- `accessories.py`：変身素材の配置・星・雪
-- `game_visuals.py`：ゲームHUD・演出
-- `graphics.py`：画像合成・日本語文字の共通描画
-- `audio.py`：効果音の読み込み・非同期再生
+- `main.py`：起動、共通の操作、カメラ映像の処理順
+- `costume/`：クリスマス変身。衣装の抽選、顔への配置、星・王冠の光、雪、ミラー表示
+- `cake_chomp/`：大食いゲーム。開度推定、開始・採点・勝敗、ケーキHUD、効果音、計測
+- `cake_chomp/rules.py`：映像や描画に依存しない試合ルール
+- `camera.py`、`vision.py`、`tracking.py`：両モードが使う撮影・顔検出・顔の短期追跡
+- `graphics.py`、`diagnostics.py`：共通の描画と確認表示
 - `diagnostics.py`：明示的に有効にする確認表示・ローカル出力
 
 日本語UIの文言を変更した開発者は、次のコマンドで文字画像を更新します。
