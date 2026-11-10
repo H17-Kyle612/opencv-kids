@@ -97,7 +97,7 @@ class MatchStory:
                 for seconds in (10, 5):
                     if observed['remaining_seconds'] > seconds >= context['remaining_seconds']:
                         events.append({'type':'final_stretch', 'remaining_seconds':seconds})
-            # 単発の口数よりも、おかわり・逆転など競技上の展開を優先する。
+
             if events:
                 self.last_event = now
             scored = old is None or context['bites'] != old['bites']
@@ -119,7 +119,7 @@ class MatchStory:
         context['event_id'] = f'{self.match}:{self.event_sequence}' if events else None
         context['events'] = events
         context['react'] = react
-        # 発話中の終了は保留し、無言になった時点で一度だけ送る。
+
         if react:
             self.announced = context.copy()
             self.last_reaction = now

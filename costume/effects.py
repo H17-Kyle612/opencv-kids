@@ -12,7 +12,7 @@ HEAD_ACCESSORIES = (*HEADS, 'crown')
 CROWN_GLOW_CENTER_Y = 185
 GLOW_FPS = 16
 
-# 基準点は christmas_camera.placement と共通。
+
 BOXES = {
     'santa': (80, 70, 240, 190),
     'beard': (99, 373, 202, 142),
@@ -35,7 +35,7 @@ def make_sprites():
             source = source[top:top+height, left:left+width]
         scale = min(w/source.shape[1], h/source.shape[0])
         sw, sh = max(1, round(source.shape[1]*scale)), max(1, round(source.shape[0]*scale))
-        # プリマルチプライで縮小し、透明部分の黒が輪郭に混ざるのを防ぐ。
+
         alpha = source[:, :, 3:4].astype(np.float32) / 255
         data = np.concatenate((source[:, :, :3].astype(np.float32)*alpha, alpha*255), axis=2)
         resized = cv2.resize(data, (sw, sh), interpolation=cv2.INTER_AREA)
@@ -77,7 +77,7 @@ def placement(face, name='red', head_offset=0.):
 def composite(frame, sprite, face, opacity=1., name='red', head_offset=0.):
     matrix = placement(face, name, head_offset)
     if name in HEAD_ACCESSORIES:
-        # 頭上が狭いときは取り付け位置を保ったまま飾りだけ小さくする。
+
         x, y, w, h = cv2.boundingRect((sprite[:, :, 3] > 12).astype(np.uint8))
         bounds = np.array([[[x, y], [x+w, y], [x+w, y+h], [x, y+h]]], np.float32)
         top = float(cv2.transform(bounds, matrix)[0, :, 1].min())
@@ -86,7 +86,7 @@ def composite(frame, sprite, face, opacity=1., name='red', head_offset=0.):
             factor = min(1., max(.05, (anchor[1] - 8) / max(anchor[1] - top, 1.)))
             matrix[:, :2] *= factor
             matrix[:, 2] = anchor - matrix[:, :2] @ np.array([200., 239.])
-    # 透明な余白を除いた領域だけを変形・合成する。元の取り付け位置は維持。
+
     sx, sy, sw, sh = cv2.boundingRect(sprite[:, :, 3])
     if sw == 0 or sh == 0:
         return
@@ -102,7 +102,7 @@ def composite(frame, sprite, face, opacity=1., name='red', head_offset=0.):
     if w <= 0 or h <= 0:
         return
     matrix[:, 2] -= low
-    # プリマルチプライで補間し、半透明の光や縁に黒いにじみを作らない。
+
     source = sprite.astype(np.float32) / 255
     source[:, :, :3] *= source[:, :, 3:4]
     patch = cv2.warpAffine(source, matrix, (int(w), int(h)), flags=cv2.INTER_LINEAR)
@@ -144,7 +144,7 @@ def star_animation(base, count=24, *, center_y=156, jewel=None):
                                  (x+2, y+2), (x, y+length), (x-2, y+2),
                                  (x-length*.6, y), (x-2, y-2)], np.int32)
             cv2.fillPoly(image, [vertices], (245, 255, 255, int(255 * intensity)), cv2.LINE_AA)
-        # 放射状の長い光芒。中心の星は消さず、周囲の光が強弱を繰り返す。
+
         strength = .5 + .5*math.sin(phase)
         for ray in range(8):
             angle = ray*math.pi/4 + .07*math.sin(phase)

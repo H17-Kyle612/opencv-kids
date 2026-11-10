@@ -8,4 +8,3 @@
 - 生成プロンプト：`prompts/accessories.json`、`prompts/cakes.json`
 
 生成したPNGをそのまま保存しています。顔への配置、サイズ調整、光や粒子の演出はOpenCVで実行します。
-ニンジン鼻は使用していません。

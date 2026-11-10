@@ -12,14 +12,14 @@ def main():
     parser.add_argument("--show", action="store_true", help="画像をウィンドウに表示する")
     args = parser.parse_args()
 
-    # 色は (青, 緑, 赤) の順。数は 0〜255 で指定します。
+
     face_color = (80, 220, 255)
     ink = (40, 40, 40)
 
-    # たて480、よこ640の白い画用紙を作ります。
+
     canvas = np.full((480, 640, 3), 255, dtype=np.uint8)
 
-    # 場所は (よこ, たて)。左上が (0, 0) です。
+
     cv2.circle(canvas, (320, 240), 150, face_color, -1)
     cv2.circle(canvas, (265, 205), 18, ink, -1)
     cv2.circle(canvas, (375, 205), 18, ink, -1)

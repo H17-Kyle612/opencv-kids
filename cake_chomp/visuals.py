@@ -81,7 +81,7 @@ class GameVisuals:
             sprite = self.cakes[4 if 0 <= age < .18 and hits and stage == 0 else stage]
 
             pill(frame, (x, y), score_width, score_height)
-            # ケーキの跳ね・回転は左側に収め、個数や進捗と重ならないようにする。
+
             top, bottom = round(y-35*unit), round(y+35*unit)
             left, right = round(x-96*unit), round(x-7*unit)
             cake_area = frame[top:bottom, left:right]

@@ -25,7 +25,7 @@ py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe setup_models.py
 ```
 
-初回はOSの設定でデスクトップアプリのカメラ使用を許可してください。効果音の追加インストールは不要です。
+初回はOSの設定でデスクトップアプリのカメラ使用を許可してください。効果音はOS標準の機能で再生します。
 
 **AI実況を使う場合**は [Codex CLI](https://learn.chatgpt.com/docs/codex/cli#install-codex) をインストールし、`codex login` でChatGPTにログインします。AI実況にはインターネット接続が必要です。
 

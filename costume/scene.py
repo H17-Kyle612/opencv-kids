@@ -22,7 +22,7 @@ class CostumeScene:
         self.show_help = True
 
     def update(self, tracked_ids):
-        # 一時的に見失った顔にも同じ衣装を維持する。
+
         for number in self.outfits.keys() - tracked_ids:
             del self.outfits[number]
         for number in tracked_ids:

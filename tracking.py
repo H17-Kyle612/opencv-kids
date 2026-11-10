@@ -43,7 +43,7 @@ class Tracker:
             if index in used_faces or key in used_tracks:
                 continue
             track = self.tracks[key]
-            # 時間に基づく平滑化。長く見失った後は古い位置に引きずらない。
+
             alpha = 1 - math.exp(-max(now - track.seen, .001) / .045)
             track.face = track.face * (1 - alpha) + faces[index] * alpha
             track.seen = now
@@ -56,6 +56,6 @@ class Tracker:
                 self.tracks[track.number] = track
                 self.next_id += 1
                 visible.append(track)
-        # 見失った顔の位置には描かない。再検出用の記録だけ一定時間残す。
+
         return visible
 

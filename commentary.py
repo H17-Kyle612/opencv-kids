@@ -199,14 +199,14 @@ class Commentator:
                                 client = None
                 if client:
                     try:
-                        # 発話中は全ての状況送信を止め、ローカルで最新1件に更新する。
+
                         if self.ready.is_set() and self.debug.can_react():
                             try:
                                 context = self.pending.get_nowait()
                             except queue.Empty:
                                 context = None
                             if context:
-                                # キューに滞留した途中経過は読み上げず、次の最新更新を待つ。
+
                                 if ((time.monotonic()-context['monotonic'] < 1. or context['context']['state'] != 'playing')
                                         and self.debug.should_send(context['context'])):
                                     self._narrate(client, context)
@@ -260,7 +260,7 @@ class Commentator:
         print(f'AI実況: {error}', flush=True)
 
     def update(self, race, now, active=True):
-        # 評価は送信時だけ行い、反応フラグを未送信のフレームで消費しない。
+
         if self.refresh_context.is_set():
             self.refresh_context.clear()
             self.previous_state = None

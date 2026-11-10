@@ -8,7 +8,7 @@ NOSES = ('red', 'none')
 
 
 def random_outfit(rng):
-    # 頭の素材は一つずつ。鼻と顔周りは独立して抽選。
+
     head = rng.choice(HEADS)
     nose = rng.choice(NOSES)
     surround = rng.choice(('beard', 'wreath', 'none'))

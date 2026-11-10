@@ -130,7 +130,7 @@ class CakeRace:
                 self.ready_since = None
                 self.players = []
                 return
-            # 顔の大きさ・場所・口の推定が安定してから、同じ参加者で開始。
+
             if [p.track_id for p in self.players] != ids:
                 self.players = [Player(i, mouth=MouthCycle(self.sensitivity)) for i in ids]
                 self.ready_since = now
@@ -161,7 +161,7 @@ class CakeRace:
                 self._start_countdown(now)
             return
         if self.state == 'countdown':
-            # カウントダウン中は何回口を動かしても得点にならない。
+
             if now - self.countdown_since >= 3.:
                 self.state = 'playing'
                 for player in self.players:

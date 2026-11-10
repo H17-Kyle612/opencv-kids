@@ -13,7 +13,7 @@ from commentary_context import finish_phrase
 from commentary_settings import DEFAULT_PROMPT, session_prompt
 
 PROMPT = DEFAULT_PROMPT
-# 音声モデルを上書きせず、App Serverの有効な設定・既定値に従う。
+
 REQUESTED_MODEL = None
 
 
@@ -41,7 +41,7 @@ class CodexClient:
             self.rpc('initialize', {'clientInfo': {'name':'cake_chomp_commentary', 'title':'ケーキぱくぱく実況', 'version':'0.1.0'},
                                     'capabilities': {'experimentalApi': True}})
             self.send({'method':'initialized'})
-            # 音声モデルはrealtime/startで指定する。通常のCodexモデルでturnは実行しない。
+
             account = self.rpc('account/read', {'refreshToken': False}).get('account')
             if not account or account.get('type') != 'chatgpt':
                 raise RuntimeError('ChatGPTログインが必要です。codex login を実行してください。')
@@ -56,7 +56,7 @@ class CodexClient:
         self.process.stdin.flush()
 
     def _read_stdout(self):
-        # Windowsのselectはソケット専用。標準出力は専用スレッドで読む。
+
         try:
             with self.process.stdout as stream:
                 for line in stream:

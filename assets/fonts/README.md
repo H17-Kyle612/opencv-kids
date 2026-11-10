@@ -6,7 +6,7 @@
 
 `BIZUDPGothic-Bold.ttf` が原本です。
 `japanese.png` と `japanese.json` は、このアプリで使う文字を事前生成した画像と配置情報です。
-実行中はOpenCVで読み込み・合成します。Pillowは実行時には使用しません。
+実行中はOpenCVで読み込み・合成します。
 
 UIの文言を変更した開発者は、プロジェクト直下で更新してください。
 

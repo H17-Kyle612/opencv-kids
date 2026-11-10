@@ -35,7 +35,6 @@ async function connect(){
    const source=context.createMediaStreamSource(stream);analyser=context.createAnalyser();analyser.fftSize=2048;
    signal=new Float32Array(analyser.fftSize);source.connect(analyser);
   };
-  // Full-duplexモデルの音声クロック。マイクは取得せず、無音を送る。
   oscillator=context.createOscillator();const gain=context.createGain();gain.gain.value=0;
   const dest=context.createMediaStreamDestination();oscillator.connect(gain);gain.connect(dest);oscillator.start();
   peer.addTrack(dest.stream.getAudioTracks()[0],dest.stream);

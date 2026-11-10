@@ -56,7 +56,7 @@ class MouthEstimator:
             mouth_width, ratio = mouth_measurement(pts)
             eye_mid = (track.face[4:6] + track.face[6:8]) / 2
             eye_distance = np.linalg.norm(track.face[4:6] - track.face[6:8])
-            # 横顔や大きく崩れた推定では、誤って食べ進めない。
+
             if not .15 * track.face[2] <= mouth_width <= .8 * track.face[2]:
                 self.errors[track.number] = '口幅が不安定'
                 continue
